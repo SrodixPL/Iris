@@ -1,0 +1,637 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{d219e00d-a04b-5c08-b54f-9da04c64caae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core">
+      <UniqueIdentifier>{29379745-efad-5a71-b8a2-eeb06a140a22}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features">
+      <UniqueIdentifier>{6f04153f-bc86-50c5-b794-b1688b790edc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features\combat">
+      <UniqueIdentifier>{431798d8-dc9f-5538-bb5a-3e0f7177aef2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features\inventory">
+      <UniqueIdentifier>{67d632af-41f9-5ce9-adc4-f9f42e0e0ba1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features\misc">
+      <UniqueIdentifier>{0c39fbf4-e4db-5ec9-af8a-86c9cb265836}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features\movement">
+      <UniqueIdentifier>{8445fb63-ec65-5ec2-b00b-354256c28d8c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features\player">
+      <UniqueIdentifier>{aa68b89f-d89f-587f-a17d-54d3053f7ba8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features\player\esp">
+      <UniqueIdentifier>{9c16a8bf-0bc9-5d15-97b9-65ab761981fa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\features\world">
+      <UniqueIdentifier>{4c6cfe4a-a1c3-597a-8def-4d1ccffadf6f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\hooks">
+      <UniqueIdentifier>{ca0a17fe-ab44-551e-9d70-61511df99f5e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\menu">
+      <UniqueIdentifier>{916c96e2-87ad-55fd-bdce-12b7d6b081bc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\render">
+      <UniqueIdentifier>{29760e4e-1c81-526c-ad64-02b4c359816d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\sdk">
+      <UniqueIdentifier>{4c89544d-ffb4-5c19-84d7-0188f0a7f148}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\sdk\generated">
+      <UniqueIdentifier>{c403cb5f-4cd4-5122-a110-e0dac3febf61}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\sdk\offsets">
+      <UniqueIdentifier>{9c42a339-fc33-54e9-9280-c23cf562022e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext">
+      <UniqueIdentifier>{d3228b00-05c0-57a3-9d2b-9fe42b16caaf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext\imgui">
+      <UniqueIdentifier>{755cd1d5-ec99-54d7-bec5-42c2c9f61c93}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext\imgui\backends">
+      <UniqueIdentifier>{6e9c0e8b-63c7-5ece-9617-7ccbf64c2c69}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext\json">
+      <UniqueIdentifier>{d095f76c-f3e4-59a5-a896-23971d9b76dc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext\minhook">
+      <UniqueIdentifier>{9e0e8b34-1a61-59c7-a978-de6cccc6b9af}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext\minhook\include">
+      <UniqueIdentifier>{44aa7516-c5c7-56f7-9d17-637204c40e09}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext\minhook\src">
+      <UniqueIdentifier>{6bc7ee42-894a-5122-a800-59e08525bc0d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ext\minhook\src\hde">
+      <UniqueIdentifier>{b115892a-0806-5299-9d04-5e500812bedf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\util">
+      <UniqueIdentifier>{517d3de5-2a56-57fd-9b80-43e0651cfc9f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\core\crash.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\crash.hpp">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\dllmain.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\combat\aim_math.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\aim_settings.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\legit.inl">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\combat\nospread.cpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\combat\nospread.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\rage.inl">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\scan_policy.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\settings.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\shot_policy.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\spread_solver.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\combat\targeting.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\inventory\catalog.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\inventory\gloves.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\inventory\inventory.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\inventory.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\inventory\patch.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\inventory\preview.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\misc\misc.cpp">
+      <Filter>src\core\features\misc</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\movement\command_policy.hpp">
+      <Filter>src\core\features\movement</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\movement\landing_policy.hpp">
+      <Filter>src\core\features\movement</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\movement\movement.cpp">
+      <Filter>src\core\features\movement</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\movement\native_pipeline.inl">
+      <Filter>src\core\features\movement</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\movement\planner.hpp">
+      <Filter>src\core\features\movement</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\movement\requests.hpp">
+      <Filter>src\core\features\movement</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\movement\settings.hpp">
+      <Filter>src\core\features\movement</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\movement\steering.hpp">
+      <Filter>src\core\features\movement</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\player\agents.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\camera.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\chams.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\bones.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\box.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\drawing.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\esp\drawing.hpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\player\esp\esp.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\flags.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\hitboxes.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\reader.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\sound.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\flash.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\glow.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\menu_models.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\player\models.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\models.hpp">
+      <Filter>src\core\features\player</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\player\sound_cue.hpp">
+      <Filter>src\core\features\player</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\player\viewmodel_variables.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\visual_materials.hpp">
+      <Filter>src\core\features\player</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\player\visual_native.cpp">
+      <Filter>src\core\features\player</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\visual_native.hpp">
+      <Filter>src\core\features\player</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\player\visual_settings.hpp">
+      <Filter>src\core\features\player</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\player\visuals.hpp">
+      <Filter>src\core\features\player</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\runtime.cpp">
+      <Filter>src\core\features</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\runtime.hpp">
+      <Filter>src\core\features</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\world\environment.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\world\environment.hpp">
+      <Filter>src\core\features\world</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\world\native.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\world\native.hpp">
+      <Filter>src\core\features\world</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\world\postprocessing.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\world\render.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\world\render.hpp">
+      <Filter>src\core\features\world</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\world\resources.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\world\skyboxes.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\world\skyboxes.hpp">
+      <Filter>src\core\features\world</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\world\smoke.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\world\weather.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\world\weather_assets.hpp">
+      <Filter>src\core\features\world</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\world\wind.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\hooks\dx11.cpp">
+      <Filter>src\core\hooks</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\hooks\dx11.hpp">
+      <Filter>src\core\hooks</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\hooks\minhook.cpp">
+      <Filter>src\core\hooks</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\hooks\minhook.hpp">
+      <Filter>src\core\hooks</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\log.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\log.hpp">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\apply_queue.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\apply_queue.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\backdrop.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\backdrop.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\brand_logo.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\config_codec.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\menu\config_io.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\config_io.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\config_ui.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\menu\feature_bindings.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\feature_bindings.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\feature_catalog.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\feature_switches.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\feature_switches.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\feature_tree.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\feature_tree.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\feature_tree_data.inl">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\file_worker.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\file_worker.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\hotkeys.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\hotkeys.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\image_cache.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\image_cache.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\inventory.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\inventory_actions.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\inventory_actions.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\inventory_model.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\inventory_model.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\inventory_navigation.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\inventory_navigation.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\inventory_picker.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\inventory_picker.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\menu.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\menu_state.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\menu_state.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\release_inventory.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\menu\settings_io.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\settings_io.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\shell.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\menu\tabs.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\tabs.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\text.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\theme.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\theme.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\thumbnail_source.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\thumbnail_source.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\transition.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\widgets.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\widgets.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\module.cpp">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\module.hpp">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\render\renderer.cpp">
+      <Filter>src\core\render</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\render\renderer.hpp">
+      <Filter>src\core\render</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\binding_config.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\binding_values.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\sdk\client.cpp">
+      <Filter>src\core\sdk</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\sdk\client.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\entities.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\experimental_commands.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\generated\agent_catalog.inc">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
+    <None Include="src\core\sdk\generated\catalog_manifest.json">
+      <Filter>src\core\sdk\generated</Filter>
+    </None>
+    <ClInclude Include="src\core\sdk\generated\client_bindings.hpp">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\generated\finish_colors.inc">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\generated\skin_catalog.inc">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\generated\thumbnail_sources.inc">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\generated\weapon_catalog.inc">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\offsets\build.hpp">
+      <Filter>src\core\sdk\offsets</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\offsets\offsets.inc">
+      <Filter>src\core\sdk\offsets</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\player_bindings.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\schema.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\types.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\visual_bindings.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\world_bindings.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\startup_status.hpp">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\thread_state.hpp">
+      <Filter>src\core</Filter>
+    </ClInclude>
+    <ClCompile Include="src\ext\imgui\backends\imgui_impl_dx11.cpp">
+      <Filter>src\ext\imgui\backends</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\imgui\backends\imgui_impl_dx11.h">
+      <Filter>src\ext\imgui\backends</Filter>
+    </ClInclude>
+    <ClCompile Include="src\ext\imgui\backends\imgui_impl_win32.cpp">
+      <Filter>src\ext\imgui\backends</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\imgui\backends\imgui_impl_win32.h">
+      <Filter>src\ext\imgui\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ext\imgui\imconfig.h">
+      <Filter>src\ext\imgui</Filter>
+    </ClInclude>
+    <ClCompile Include="src\ext\imgui\imgui.cpp">
+      <Filter>src\ext\imgui</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\imgui\imgui.h">
+      <Filter>src\ext\imgui</Filter>
+    </ClInclude>
+    <ClCompile Include="src\ext\imgui\imgui_draw.cpp">
+      <Filter>src\ext\imgui</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\imgui\imgui_internal.h">
+      <Filter>src\ext\imgui</Filter>
+    </ClInclude>
+    <ClCompile Include="src\ext\imgui\imgui_tables.cpp">
+      <Filter>src\ext\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ext\imgui\imgui_widgets.cpp">
+      <Filter>src\ext\imgui</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\imgui\imstb_rectpack.h">
+      <Filter>src\ext\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ext\imgui\imstb_textedit.h">
+      <Filter>src\ext\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ext\imgui\imstb_truetype.h">
+      <Filter>src\ext\imgui</Filter>
+    </ClInclude>
+    <None Include="src\ext\imgui\LICENSE.txt">
+      <Filter>src\ext\imgui</Filter>
+    </None>
+    <ClInclude Include="src\ext\json\json.hpp">
+      <Filter>src\ext\json</Filter>
+    </ClInclude>
+    <None Include="src\ext\json\LICENSE.MIT">
+      <Filter>src\ext\json</Filter>
+    </None>
+    <ClInclude Include="src\ext\minhook\include\MinHook.h">
+      <Filter>src\ext\minhook\include</Filter>
+    </ClInclude>
+    <None Include="src\ext\minhook\LICENSE.txt">
+      <Filter>src\ext\minhook</Filter>
+    </None>
+    <ClCompile Include="src\ext\minhook\src\buffer.c">
+      <Filter>src\ext\minhook\src</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\minhook\src\buffer.h">
+      <Filter>src\ext\minhook\src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ext\minhook\src\hde\hde32.h">
+      <Filter>src\ext\minhook\src\hde</Filter>
+    </ClInclude>
+    <ClCompile Include="src\ext\minhook\src\hde\hde64.c">
+      <Filter>src\ext\minhook\src\hde</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\minhook\src\hde\hde64.h">
+      <Filter>src\ext\minhook\src\hde</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ext\minhook\src\hde\pstdint.h">
+      <Filter>src\ext\minhook\src\hde</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ext\minhook\src\hde\table32.h">
+      <Filter>src\ext\minhook\src\hde</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ext\minhook\src\hde\table64.h">
+      <Filter>src\ext\minhook\src\hde</Filter>
+    </ClInclude>
+    <ClCompile Include="src\ext\minhook\src\hook.c">
+      <Filter>src\ext\minhook\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ext\minhook\src\trampoline.c">
+      <Filter>src\ext\minhook\src</Filter>
+    </ClCompile>
+    <ClInclude Include="src\ext\minhook\src\trampoline.h">
+      <Filter>src\ext\minhook\src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\file_hash.hpp">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\math.hpp">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClCompile Include="src\util\memory.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
+    <ClInclude Include="src\util\memory.hpp">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClCompile Include="src\util\pattern.cpp">
+      <Filter>src\util</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

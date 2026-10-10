@@ -1,0 +1,7 @@
+{
+  "entries": 2098,
+  "weapons": 62,
+  "knife_models": 22,
+  "items_sha256": "1edea31ef2af0a46d1b38b4e4a6337de534bb61629f4b527137617ef03879fed",
+  "game_version": "ClientVersion=2000922\nServerVersion=2000922\nPatchVersion=1.41.8.8\nProductName=cs2\nappID=730\nServerAppID=2347773\nSourceRevision=11064488\nVersionDate=Sep 30 2026\nVersionTime=16:29:50\n"
+}
