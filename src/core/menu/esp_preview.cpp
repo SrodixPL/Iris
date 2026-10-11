@@ -1,5 +1,6 @@
 #include "core/menu/esp_preview.hpp"
 #include "core/menu/widgets.hpp"
+#include "core/menu/player_model.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -33,22 +34,8 @@ bool draw(MenuRuntime& menu,const visuals::Settings& input,State& state,visuals:
     d->PushClipRect(start,end,true);
     const bool live=model&&model->texture;
     const auto at=[&](ImVec2 uv){return ImVec2{start.x+uv.x*width,start.y+uv.y*height};};
-    const ImVec2 lo=at(live?model->bounds_min:ImVec2{.28f,.14f}),hi=at(live?model->bounds_max:ImVec2{.72f,.88f});
+    ImVec2 lo=at(live?model->bounds_min:ImVec2{.28f,.18f}),hi=at(live?model->bounds_max:ImVec2{.72f,.82f});
     if(live)d->AddImage(ImTextureRef(model->texture),start,end);
-    else {
-        // A schematic layout sample is independent of native scene rendering.
-        // It previews existing ESP settings without pretending to be a game model.
-        const auto fill=ImGui::GetColorU32(theme::surface_tint(theme::section_surface,theme::secondary,.3f));
-        const auto outline=ImGui::GetColorU32(theme::secondary);
-        const float cx=(lo.x+hi.x)*.5f,h=hi.y-lo.y,w=hi.x-lo.x;
-        const ImVec2 head{cx,lo.y+h*.085f};d->AddCircleFilled(head,h*.07f,fill,32);d->AddCircle(head,h*.07f,outline,32,s);
-        const std::array<ImVec2,8> torso{{{cx-w*.26f,lo.y+h*.19f},{cx+w*.26f,lo.y+h*.19f},{cx+w*.34f,lo.y+h*.27f},{cx+w*.22f,lo.y+h*.53f},{cx+w*.16f,lo.y+h*.6f},{cx-w*.16f,lo.y+h*.6f},{cx-w*.22f,lo.y+h*.53f},{cx-w*.34f,lo.y+h*.27f}}};
-        d->AddConvexPolyFilled(torso.data(),static_cast<int>(torso.size()),fill);d->AddPolyline(torso.data(),static_cast<int>(torso.size()),outline,ImDrawFlags_Closed,s);
-        const auto limb=[&](ImVec2 a,ImVec2 b,float thickness){d->AddLine(a,b,outline,thickness+2*s);d->AddLine(a,b,fill,thickness);};
-        limb({cx-w*.31f,lo.y+h*.25f},{cx-w*.43f,lo.y+h*.49f},w*.16f);limb({cx+w*.31f,lo.y+h*.25f},{cx+w*.43f,lo.y+h*.49f},w*.16f);
-        limb({cx-w*.12f,lo.y+h*.58f},{cx-w*.19f,hi.y-h*.03f},w*.2f);limb({cx+w*.12f,lo.y+h*.58f},{cx+w*.19f,hi.y-h*.03f},w*.2f);
-        const char* status="Layout sample - live model unavailable";const auto size=ImGui::CalcTextSize(status);d->AddText({start.x+(width-size.x)*.5f,end.y-22*s},ImGui::GetColorU32(theme::muted),status);
-    }
     visuals::Player player=live?model->player:visuals::Player{};
     if(!live){player.name="Player";player.weapon="AK-47";player.distance=30;player.health=72;player.armor=65;player.clip=18;player.max_clip=30;player.money=4200;player.helmet=true;player.flags={false,true,false,true,false,false,true,false,true};}
     player.enemy=state.target!=2;player.visible=state.target!=1;
@@ -56,6 +43,16 @@ bool draw(MenuRuntime& menu,const visuals::Settings& input,State& state,visuals:
     const bool overlay=c.enabled&&player.distance<=c.max_distance&&(!c.visible_only||player.visible);
     c.box=c.enabled&&c.box&&player.distance<=c.box_max_distance&&(!c.box_visible_only||player.visible);
     if(!overlay){c.name=c.health=c.health_number=c.ammo=c.armor=c.weapon=c.distance=c.snapline=c.skeleton=c.hitboxes=c.arrows=c.sounds=false;c.flags.fill(false);}
+    if(!live)for(int pass=0;pass<3;++pass){
+        ImVec2 a=lo,b=hi;const auto measured=visuals::esp::draw_elements(nullptr,player,c,lo,hi);
+        for(const auto& rect:measured)if(rect.drawn){a.x=std::min(a.x,rect.min.x);a.y=std::min(a.y,rect.min.y);b.x=std::max(b.x,rect.max.x);b.y=std::max(b.y,rect.max.y);}
+        const float left=lo.x-a.x,right=b.x-hi.x,top=lo.y-a.y,bottom=b.y-hi.y;
+        const float fit=std::min({1.f,(width-24*s-left-right)/(hi.x-lo.x),(height-40*s-top-bottom)/(hi.y-lo.y)});
+        const float w=(hi.x-lo.x)*std::max(.3f,fit),h=(hi.y-lo.y)*std::max(.3f,fit);
+        lo={start.x+(width-w-left-right)*.5f+left,start.y+(height-h-top-bottom)*.5f+top};hi={lo.x+w,lo.y+h};
+    }
+    const auto local_matrix=live?visuals::Matrix{}:player_model::draw(d,lo,hi,state.yaw,state.pitch,player,state.model_cache);
+    state.model_bounds={lo,hi};
     visuals::esp::box(d,player,c,lo,hi);
     const auto rects=visuals::esp::draw_elements(d,player,c,lo,hi,live?model->lookup:nullptr,live?model->icon_owner:nullptr);
     const auto hit=[&](Element element,ImVec2 a,ImVec2 b,const char* part,std::size_t layout_id=elements.size()) {
@@ -81,17 +78,17 @@ bool draw(MenuRuntime& menu,const visuals::Settings& input,State& state,visuals:
     hit(Element::Box,{lo.x-3*s,hi.y-3*s},{hi.x+3*s,hi.y+3*s},"bottom");
     hit(Element::Box,{lo.x-3*s,lo.y+3*s},{lo.x+3*s,hi.y-3*s},"left");
     hit(Element::Box,{hi.x-3*s,lo.y+3*s},{hi.x+3*s,hi.y-3*s},"right");
-    if(live) {
+    {
         const auto& base=player.enemy?(player.visible?c.enemy_color:c.hidden_color):c.ally_color;
         const auto tint=[&](const auto& value){return visuals::esp::rgba(visuals::tint(base,value));};
-        visuals::esp::bones(d,player,c,model->matrix,{width,height},tint(c.skeleton_color),start);
-        visuals::esp::hitboxes(d,player,c,model->matrix,{width,height},tint(c.hitbox_color),start);
+        visuals::esp::bones(d,player,c,live?model->matrix:local_matrix,live?ImVec2{width,height}:ImVec2{hi.x-lo.x,hi.y-lo.y},tint(c.skeleton_color),live?start:lo);
+        visuals::esp::hitboxes(d,player,c,live?model->matrix:local_matrix,live?ImVec2{width,height}:ImVec2{hi.x-lo.x,hi.y-lo.y},tint(c.hitbox_color),live?start:lo);
         if(c.snapline)d->AddLine({start.x+width*.5f,end.y-1},{(lo.x+hi.x)*.5f,hi.y},tint(c.snapline_color),c.thickness);
         const auto cursor=ImGui::GetCursorScreenPos();ImGui::SetCursorScreenPos({lo.x+4*s,lo.y+4*s});ImGui::InvisibleButton("rotate_model",{std::max(1.f,hi.x-lo.x-8*s),std::max(1.f,hi.y-lo.y-8*s)});
-        state.rotating=!widgets::popup_closing()&&ImGui::IsWindowHovered()&&ImGui::IsItemActive()&&ImGui::IsMouseDragging(0);
+        state.rotating=state.dragging<0&&!widgets::popup_closing()&&ImGui::IsItemActive()&&ImGui::IsMouseDragging(0);
         if(state.rotating){const auto delta=ImGui::GetIO().MouseDelta;state.yaw=std::remainder(state.yaw+delta.x*.6f,360.f);state.pitch=std::clamp(state.pitch+delta.y*.4f,-30.f,30.f);}
         if(ImGui::IsItemHovered())ImGui::SetTooltip("Drag player to rotate");ImGui::SetCursorScreenPos(cursor);
-    }else state.rotating=false;
+    }
     if(state.dragging>=0){
         if(ImGui::IsKeyPressed(ImGuiKey_Escape,false)||!updated_layout||(ImGui::GetCurrentContext()->CurrentItemFlags&ImGuiItemFlags_Disabled)){state.dragging=-1;}
         else {

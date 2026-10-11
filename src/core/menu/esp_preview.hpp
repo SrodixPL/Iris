@@ -2,10 +2,11 @@
 #include "core/features/player/visual_settings.hpp"
 #include "core/menu/menu_state.hpp"
 #include "core/features/player/esp/elements.hpp"
+#include "core/menu/player_model.hpp"
 
 namespace iris::ui::esp_preview {
 enum class Element {Box,Name,Health,HealthNumber,Ammo,Armor,Weapon,Distance,Flags,Snapline,Skeleton,Hitboxes,Arrows,Sounds,Count};
-struct State {Element selected{Element::Box};int target{};float yaw{},pitch{};bool rotating{},options_open{},element_options{};Bounds options_anchor;int dragging{-1};ImVec2 drag_offset{};};
+struct State {Element selected{Element::Box};int target{};float yaw{},pitch{};bool rotating{},options_open{},element_options{};Bounds options_anchor,model_bounds;int dragging{-1};ImVec2 drag_offset{};player_model::Cache model_cache;};
 // The texture must be owned by the menu upload cache and originate from copied
 // RGBA scene pixels. Native entities and borrowed render targets never enter UI.
 struct ModelFrame {

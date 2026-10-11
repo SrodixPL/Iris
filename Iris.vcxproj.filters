@@ -37,6 +37,9 @@
     <Filter Include="src\core\menu">
       <UniqueIdentifier>{916c96e2-87ad-55fd-bdce-12b7d6b081bc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\core\menu\assets">
+      <UniqueIdentifier>{117f7c13-a346-5b86-a549-343399bec88a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\core\render">
       <UniqueIdentifier>{29760e4e-1c81-526c-ad64-02b4c359816d}</UniqueIdentifier>
     </Filter>
@@ -330,6 +333,12 @@
     <ClInclude Include="src\core\menu\apply_queue.hpp">
       <Filter>src\core\menu</Filter>
     </ClInclude>
+    <None Include="src\core\menu\assets\NOTICE.md">
+      <Filter>src\core\menu\assets</Filter>
+    </None>
+    <ClInclude Include="src\core\menu\assets\player_mesh.inc">
+      <Filter>src\core\menu\assets</Filter>
+    </ClInclude>
     <ClCompile Include="src\core\menu\backdrop.cpp">
       <Filter>src\core\menu</Filter>
     </ClCompile>
@@ -439,6 +448,12 @@
       <Filter>src\core\menu</Filter>
     </ClCompile>
     <ClInclude Include="src\core\menu\menu_state.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\player_model.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\player_model.hpp">
       <Filter>src\core\menu</Filter>
     </ClInclude>
     <ClCompile Include="src\core\menu\release_inventory.cpp">

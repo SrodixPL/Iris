@@ -44,6 +44,7 @@ ElementRects draw_elements(ImDrawList* d,const Player& p,const Settings& c,ImVec
     const auto labels=flag_labels(p,c);ImVec2 flags_size{};for(std::size_t i=0;i<labels.count;++i)flags_size.x=std::max(flags_size.x,ImGui::CalcTextSize(labels.values[i].data()).x);flags_size.y=labels.count*font;
     set(EspElement::Flags,labels.count>0,flags_size);
     const auto rects=layout_elements(c.esp_layout,measure,min,max);
+    if(!d)return rects;
     const auto& base=p.enemy?(p.visible?c.enemy_color:c.hidden_color):c.ally_color;
     const auto tint_color=[&](const auto& value){return rgba(tint(base,value));};
     for(std::size_t id=0;id<rects.size();++id){const auto& rect=rects[id];if(!rect.drawn)continue;const auto e=static_cast<EspElement>(id);const bool vertical=static_cast<unsigned>(c.esp_layout[id].side)>=2;

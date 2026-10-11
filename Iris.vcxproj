@@ -271,6 +271,8 @@
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\menu\apply_queue.hpp" />
+    <None Include="src\core\menu\assets\NOTICE.md" />
+    <ClInclude Include="src\core\menu\assets\player_mesh.inc" />
     <ClCompile Include="src\core\menu\backdrop.cpp">
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>
@@ -342,6 +344,10 @@
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\menu\menu_state.hpp" />
+    <ClCompile Include="src\core\menu\player_model.cpp">
+      <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\player_model.hpp" />
     <ClCompile Include="src\core\menu\release_inventory.cpp">
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>

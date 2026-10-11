@@ -327,14 +327,16 @@ void render(MenuRuntime& state) {
               if(widgets::popup_item(element==0?"Bounding box":nodes[control].label,selected,true)){value(control).enabled=!selected;preview.selected=static_cast<esp_preview::Element>(element);changed=true;}
               ImGui::EndDisabled();ImGui::PopID();
             }
-            const auto selected=static_cast<std::size_t>(preview.selected);
-            if(selected<12){
-              const char* key=color_keys[selected];
-              row(state,find(std::string("Visuals/Player/Element colors/")+key),changed);
-              if(preview.selected==esp_preview::Element::Health)row(state,find("Visuals/Player/Element colors/health_full_color"),changed);
+            const auto colors=widgets::panel_row("esp_colors","Colors");
+            const bool reveal_colors=state.search_reveal_pending&&state.search_target.starts_with("Visuals/Player/Element colors/");
+            if(colors.clicked||reveal_colors)ImGui::OpenPopup("esp_colors");
+            if(widgets::begin_popup("esp_colors",colors.bounds,theme::popup_width,430,"Colors",true,true,false,false)){
+              for(const auto* key:color_keys)row(state,find(std::string("Visuals/Player/Element colors/")+key),changed);
+              row(state,find("Visuals/Player/Element colors/health_full_color"),changed);
+              row(state,find("Visuals/Player/Element colors/box_ally_color"),changed);
+              widgets::end_popup();
             }
             for(const auto* path:{"Visuals/Player/ESP items/Flag types","Visuals/Player/ESP items/Visible only","Visuals/Player/ESP items/Distance limit","Visuals/Player/ESP items/Thickness"})row(state,find(path),changed);
-            if(state.search_reveal_pending&&state.search_target.starts_with("Visuals/Player/Element colors/"))row(state,find(state.search_target),changed);
             if(state.search_reveal_pending)for(int child:children(esp))if(state.search_target==nodes[child].path)row(state,child,changed);
           }
           ImGui::EndDisabled();widgets::end_popup();
