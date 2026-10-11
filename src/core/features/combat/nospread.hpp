@@ -18,6 +18,8 @@ inline std::atomic<std::shared_ptr<const movement::Settings>> movement_settings;
 inline movement::NativeInput native_input;
 inline std::atomic<bool> stopped{};
 inline std::atomic<const char*> legit_status{"Waiting for game runtime"};
+// Copied command-thread identity lets the overlay resolve the same profile safely.
+inline std::atomic<int> legit_weapon_definition{};
 inline std::atomic<float> camera_fov{90};
 inline std::atomic<bool> player_alive{};
 struct HudSnapshot {bool scoped{};float accuracy{},fov{90};std::uint64_t sampled{};};

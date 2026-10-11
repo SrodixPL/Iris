@@ -2,6 +2,7 @@
 #include "core/menu/menu_state.hpp"
 namespace iris::ui {
 inline constexpr int knife_slot=-1,glove_slot=-2,agent_slot=-3;
+bool inventory_can_mirror(int slot,int definition);
 SkinEditor& skin_editor(MenuRuntime& state,int team,int slot,int definition);
 const cosmetics::Selection* applied_selection(const MenuState& state,int team,int slot);
 void select_skin(MenuRuntime& state,int paint);

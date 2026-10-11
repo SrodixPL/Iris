@@ -15,7 +15,7 @@ void restore_agent(Runtime& state) {
     state.agent_next_refresh = 0;
 }
 void update_agent(Runtime& state,Address pawn,std::uint32_t handle,bool alive,int team) {
-    const bool active=alive && team>=2 && team<=3 && !state.stopping;
+    const bool active=alive && team>=2 && team<=3 && state.requested.enabled && !state.stopping;
     const int definition=active ? state.requested.agents[team-2] : 0;
     const auto* agent=find_agent(definition);
     const std::string desired=active && !state.requested.custom_models[team-2].empty() ? state.requested.custom_models[team-2] : agent ? agent->model : "";
@@ -26,6 +26,7 @@ void update_agent(Runtime& state,Address pawn,std::uint32_t handle,bool alive,in
     const auto name=get<Address>(scene+state.fields.model+state.fields.model_name);
     if(!name)return;
     const auto current=string_at(name);
+    if(current.empty())return;
     if(!state.agent) {
         Selection value;value.definition=definition;
         state.agent.emplace(ChangedWeapon{pawn,handle,value,{}});

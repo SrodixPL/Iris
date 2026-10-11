@@ -24,8 +24,11 @@ struct PopupContents {
   float height{260};
   bool request_open{};
 };
+struct ColorAffordance { ImVec4& color; ColorSelectorState& editor; ColorPalette& palette; bool alpha{true}; };
 bool toggle(const char* id, const char* label, bool& value, bool disabled=false,
-            const PopupContents* settings=nullptr, bool hotkeys=true, bool compact=false,ImGuiID binding=0);
+            const PopupContents* settings=nullptr, bool hotkeys=true, bool compact=false,ImGuiID binding=0,const ColorAffordance* color=nullptr);
+bool toggle_color(const char* id,const char* label,bool& value,ImVec4& color,ColorSelectorState& editor,
+                  ColorPalette& palette,bool disabled=false,ImGuiID binding=0,bool alpha=true);
 bool toggle_more(const char* id, const char* label, bool& value,
                  const PopupContents& settings, bool disabled=false, bool hotkeys=true);
 struct RowResult { bool clicked{}; Bounds bounds{}; };
@@ -43,7 +46,7 @@ bool combo(const char* id, const char* label, int& selected,
            std::span<const Option> options, bool disabled=false,
            const PopupContents* settings=nullptr, bool hotkeys=true, bool compact=false,ImGuiID binding=0);
 bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelectorState& state,
-                    ColorPalette& palette,bool disabled=false,bool compact=false);
+                    ColorPalette& palette,bool disabled=false,bool compact=false,bool alpha=true);
 bool save_color_palette(ColorPalette& palette);
 bool combo_more(const char* id, const char* label, int& selected,
                 std::span<const Option> options, const PopupContents& settings,
@@ -51,7 +54,7 @@ bool combo_more(const char* id, const char* label, int& selected,
 using SelectionSummary=std::string (*)(std::span<const bool>,std::span<const Option>);
 bool multi_combo(const char* id, const char* label, std::span<bool> selected,
                  std::span<const Option> options, const char* title=nullptr,
-                 bool disabled=false, SelectionSummary summary=nullptr, bool hotkeys=true,ImGuiID binding=0);
+                 bool disabled=false, SelectionSummary summary=nullptr, bool hotkeys=true,ImGuiID binding=0,const ColorAffordance* color=nullptr);
 bool begin_popup(const char* id, Bounds anchor, float width, float height,
                  const char* title=nullptr, bool beside=false, bool viewport_only=false, bool compact=false,bool fit_content=true,bool modal=false,bool preserve_focus=false,ImVec2 padding={-1,-1});
 void chevron(ImVec2 center,float rotation=0);
@@ -63,4 +66,6 @@ void end_popup();
 bool popup_closing();
 bool begin_group(const char* id, const char* title=nullptr);
 void end_group();
+// Shared compact selection button for target tabs and element/flag palettes.
+bool selection_button(const char* label,bool selected,ImVec2 size,bool disabled=false);
 }

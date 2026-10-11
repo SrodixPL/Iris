@@ -1,4 +1,5 @@
 #include "core/menu/thumbnail_source.hpp"
+#include "core/features/inventory/inventory.hpp"
 #include <Windows.h>
 #include <winhttp.h>
 #include <algorithm>
@@ -56,9 +57,16 @@ bool download_thumbnail(int definition, int paint, const std::filesystem::path& 
     const auto key = std::pair{definition, paint};
     const auto found = std::lower_bound(std::begin(sources), std::end(sources), key,
         [](const Source& source, const auto& value) { return std::pair{source.definition, source.paint} < value; });
-    if (found == std::end(sources) || found->definition != definition || found->paint != paint) return false;
+    const bool music=definition==-4;
+    const auto* kit=music?cosmetics::find_music_kit(paint):nullptr;
+    if (music&&!kit)return false;
+    if (!music&&(found == std::end(sources) || found->definition != definition || found->paint != paint)) return false;
     std::vector<unsigned char> bytes;
-    if (!fetch(found->url, bytes, stopping) && !fetch(found->fallback, bytes, stopping)) return false;
+    if(music) {
+        const std::string path="https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/"+std::string(kit->image)+"_png.png";
+        const std::wstring url(path.begin(),path.end());
+        if(!fetch(url.c_str(),bytes,stopping))return false;
+    }else if (!fetch(found->url, bytes, stopping) && !fetch(found->fallback, bytes, stopping)) return false;
     std::error_code error;
     std::filesystem::create_directories(destination.parent_path(), error);
     if (error) return false;

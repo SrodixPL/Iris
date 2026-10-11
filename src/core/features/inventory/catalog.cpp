@@ -17,6 +17,9 @@ constexpr Agent agent_catalog[]{
 constexpr Weapon weapon_catalog[]{
 #include "core/sdk/generated/weapon_catalog.inc"
 };
+constexpr MusicKit music_catalog[]{
+#include "core/sdk/generated/music_catalog.inc"
+};
 bool contains(const char* text, const char* query) noexcept {
     const auto size = std::strlen(query);
     for (; *text; ++text) {
@@ -31,6 +34,8 @@ std::span<const Agent> agents() noexcept { return agent_catalog; }
 const Agent* find_agent(int definition) noexcept { for (const auto& agent : agent_catalog) if (agent.definition == definition) return &agent; return nullptr; }
 std::span<const Finish> catalog() noexcept { return finishes; }
 std::span<const Weapon> weapons() noexcept { return weapon_catalog; }
+std::span<const MusicKit> music_kits() noexcept { return music_catalog; }
+const MusicKit* find_music_kit(int id) noexcept { for(const auto& kit:music_catalog)if(kit.id==id)return &kit;return nullptr; }
 const Weapon* find_weapon(int definition) noexcept {
     for (const auto& weapon : weapon_catalog) if (weapon.definition == definition) return &weapon;
     return nullptr;
@@ -58,13 +63,15 @@ bool valid(const Selection& selection) noexcept {
 }
 void validate_configuration(const Configuration& configuration) {
     visuals::validate(configuration.player_visuals);
+    world::esp::validate(configuration.world_esp);
     combat::validate(configuration.combat_settings);
     movement::validate(configuration.movement_options);
     const auto bounded=[](float value,float low,float high){return std::isfinite(value) && value>=low && value<=high;};
     if(!bounded(configuration.strafe_strength,0,1) ||
-       !bounded(configuration.fov,60,140) || !bounded(configuration.viewmodel_fov,30,120) ||
+       !bounded(configuration.fov,60,140) || !bounded(configuration.scope_fov,60,140) || !bounded(configuration.thirdperson_distance,0,500) || !bounded(configuration.viewmodel_fov,30,120) ||
        !bounded(configuration.viewmodel_x,-10,10) || !bounded(configuration.viewmodel_y,-10,10) || !bounded(configuration.viewmodel_z,-10,10))
         throw std::invalid_argument("Movement or camera setting is outside its supported range.");
+    if(configuration.music_kit && !find_music_kit(configuration.music_kit))throw std::invalid_argument("Choose a music kit from the current catalog.");
     const auto& rage=configuration.no_spread_settings;
     if(!bounded(rage.fov,1,180))throw std::invalid_argument("Aim FOV must be between 1 and 180 degrees.");
     if(!bounded(rage.minimum_damage,1,130)||!bounded(rage.hit_chance,0,100)||!bounded(rage.multipoint_scale,0.1f,1)||!bounded(rage.shot_delay,0,1000))throw std::invalid_argument("Rage setting is outside its supported range.");
@@ -87,7 +94,7 @@ void validate_configuration(const Configuration& configuration) {
         for (const auto& selection : configuration.loadouts[team]) {
             const auto* weapon = find_weapon(selection.definition);
             if (!valid(selection) || !weapon || weapon->glove ||
-                (weapon->knife && !(weapon->teams & (1u << team))))
+                !(weapon->teams & (1u << team)))
                 throw std::invalid_argument("Invalid cosmetic selection for this team.");
             if (std::find(definitions.begin(), definitions.end(), selection.definition) != definitions.end())
                 throw std::invalid_argument("Duplicate loadout weapon.");

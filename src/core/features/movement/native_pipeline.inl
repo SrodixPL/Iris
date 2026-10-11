@@ -105,7 +105,9 @@ void plan_jumps(Address command,const movement::Settings& config,bool held) {
     const auto handle=read_native<std::uint32_t>(controller+state->f.pawn);const auto pawn=sdk::entity(state->client,handle);
     if(!pawn||read_native<int>(pawn+state->f.health)<=0||read_native<std::uint8_t>(pawn+state->f.move_type)!=2){state->jump_state={};state->jump_plan.reset();state->jump_plans.clear();return;}
     for(auto i=state->jump_plans.rbegin();i!=state->jump_plans.rend();++i)
-        if(i->number==cmd.number&&i->tick==base.tick&&i->seed==base.random_seed&&i->pawn==handle&&i->config==config&&i->held==held){
+        // Prediction and command preparation can observe different held input.
+        // Replaying this identity must reuse its original jump decision.
+        if(i->number==cmd.number&&i->tick==base.tick&&i->seed==base.random_seed&&i->pawn==handle&&i->config==config){
             state->jump_plan=*i;
             if(!write_jump_plan(command,cmd,base,*state->jump_plan))movement_status="Movement paused: jump input changed during rebuild";
             return;
@@ -119,6 +121,11 @@ void plan_jumps(Address command,const movement::Settings& config,bool held) {
         if(i->number==cmd.number&&i->tick==base.tick&&i->seed==base.random_seed&&i->pawn==handle){sample=*i;break;}
     if(!finite(sample.origin))return;
     movement::LandingInput input;input.pawn=handle;input.held=held;input.bhop=config.bhop;input.options=config.options;
+    const auto number=static_cast<std::uint64_t>(cmd.number);
+    input.decision_seed=movement::random_word(static_cast<std::uint32_t>(number))^
+        std::rotl(movement::random_word(static_cast<std::uint32_t>(number>>32)),7)^
+        std::rotl(movement::random_word(static_cast<std::uint32_t>(base.tick)),13)^
+        std::rotl(movement::random_word(static_cast<std::uint32_t>(base.random_seed)),23);
     input.grounded=sample.grounded;
     input.horizontal_speed=std::hypot(sample.velocity.x,sample.velocity.y);input.vertical_speed=sample.velocity.z;
     state->observed_support=-1;constexpr float dt=1.f/64.f;

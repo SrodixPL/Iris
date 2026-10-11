@@ -2,12 +2,15 @@
 #include "core/features/player/visuals.hpp"
 #include <imgui.h>
 namespace iris::visuals::esp {
+inline ImU32 rgba(const std::array<float,4>& value) {return ImGui::ColorConvertFloat4ToU32({value[0],value[1],value[2],value[3]});}
+struct FlagLabels {std::array<std::array<char,32>,9> values{};std::size_t count{};};
+FlagLabels flag_labels(const Player& p,const Settings& c);
 ImVec2 point(Vector v);
 void text(ImDrawList* d,ImVec2 at,ImU32 color,const char* value,bool center=false);
 void bar(ImDrawList* d,ImVec2 min,ImVec2 max,float ratio,ImU32 color,bool vertical);
 void flags(ImDrawList* d,const Player& p,const Settings& c,ImVec2 min,ImVec2 max,ImU32 color,float font);
-void bones(ImDrawList* d,const Player& p,const Settings& c,const Matrix& matrix,ImVec2 size,ImU32 color);
-void hitboxes(ImDrawList* d,const Player& p,const Settings& c,const Matrix& matrix,ImVec2 size,ImU32 color);
+void bones(ImDrawList* d,const Player& p,const Settings& c,const Matrix& matrix,ImVec2 size,ImU32 color,ImVec2 offset={});
+void hitboxes(ImDrawList* d,const Player& p,const Settings& c,const Matrix& matrix,ImVec2 size,ImU32 color,ImVec2 offset={});
 void box(ImDrawList* d,const Player& p,const Settings& c,ImVec2 min,ImVec2 max);
 void sound(ImDrawList* d,const Player& p,const Settings& c,const Snapshot& frame,std::uint64_t now,ImVec2 size,const std::array<float,4>& rgba);
 }

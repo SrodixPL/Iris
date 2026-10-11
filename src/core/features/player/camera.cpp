@@ -3,11 +3,17 @@
 namespace iris::cosmetics::detail {
 void __fastcall viewmodel_hook(std::array<float,3>* offsets,float* fov,bool clamp) {
     auto& state=runtime();state.original_viewmodel(offsets,fov,clamp);
-    if(const auto value=state.viewmodel_override.load();value && offsets && fov){*offsets=value->offsets;if(value->fov_override)*fov=value->fov;}
+    if(const auto value=state.viewmodel_override.load();value){
+        if(value->offsets_override && offsets)*offsets=value->offsets;
+        if(value->fov_override && fov)*fov=value->fov;
+    }
 }
 void __fastcall pawn_viewmodel_hook(void* pawn,std::array<float,3>* offsets,float* fov) {
     auto& state=runtime();state.original_pawn_viewmodel(pawn,offsets,fov);
-    if(const auto value=state.viewmodel_override.load();value && value->pawn==reinterpret_cast<Address>(pawn) && offsets && fov){*offsets=value->offsets;if(value->fov_override)*fov=value->fov;}
+    if(const auto value=state.viewmodel_override.load();value && value->pawn==reinterpret_cast<Address>(pawn)){
+        if(value->offsets_override && offsets)*offsets=value->offsets;
+        if(value->fov_override && fov)*fov=value->fov;
+    }
 }
 void __fastcall camera_hook(void* self,int slot) {
     auto& state=runtime();
@@ -23,8 +29,10 @@ void __fastcall camera_hook(void* self,int slot) {
     const auto history=memory::read<Address>(camera+iris::sdk::binding_values::layout_camera_history).value_or(0);
     if(count>0 && count<256 && history)
         angles=memory::read<std::array<float,3>>(history+(count-1)*iris::sdk::binding_values::layout_camera_history_stride+iris::sdk::binding_values::layout_camera_history_angles);
-    if(!angles)return;
-    (*angles)[2]=120.f;
+    if(!angles || !std::isfinite((*angles)[0]) || !std::isfinite((*angles)[1]))return;
+    const float distance=state.camera_distance.load();
+    if(!std::isfinite(distance))return;
+    (*angles)[2]=std::clamp(distance,0.f,500.f);
     if(!memory::write(camera+bindings::camera_offset,*angles))return;
     if(!memory::write(camera+bindings::camera_flag,true))return;
 }
@@ -49,22 +57,33 @@ void update_camera_fields(Runtime& state){
     if(state.stopping || !pawn || get<int>(pawn+state.fields.health)<=0){restore_camera_fields(state);return;}
     state.camera_pawn=pawn;state.camera_pawn_handle=handle;
     state.viewmodel_fields.address=pawn;state.camera_fields.address=camera;
-    if(!f.viewmodel_override)restore_environment_entity(state.viewmodel_fields);
+    if(!f.viewmodel_override && !f.viewmodel_fov_override)restore_environment_entity(state.viewmodel_fields);
     else {
-        state.viewmodel_override.store(std::make_shared<const ViewmodelOverride>(ViewmodelOverride{pawn,{f.viewmodel_x,f.viewmodel_y,f.viewmodel_z},f.viewmodel_fov,f.viewmodel_fov_override}));
-        environment_write(state.viewmodel_fields,environment_offset(state,"C_CSPlayerPawn","m_flViewmodelOffsetX"),f.viewmodel_x);
-        environment_write(state.viewmodel_fields,environment_offset(state,"C_CSPlayerPawn","m_flViewmodelOffsetY"),f.viewmodel_y);
-        environment_write(state.viewmodel_fields,environment_offset(state,"C_CSPlayerPawn","m_flViewmodelOffsetZ"),f.viewmodel_z);
+        state.viewmodel_override.store(std::make_shared<const ViewmodelOverride>(ViewmodelOverride{pawn,{f.viewmodel_x,f.viewmodel_y,f.viewmodel_z},f.viewmodel_fov,f.viewmodel_fov_override,f.viewmodel_override}));
+        const int x=environment_offset(state,"C_CSPlayerPawn","m_flViewmodelOffsetX");
+        const int y=environment_offset(state,"C_CSPlayerPawn","m_flViewmodelOffsetY");
+        const int z=environment_offset(state,"C_CSPlayerPawn","m_flViewmodelOffsetZ");
+        if(f.viewmodel_override){
+            environment_write(state.viewmodel_fields,x,f.viewmodel_x);
+            environment_write(state.viewmodel_fields,y,f.viewmodel_y);
+            environment_write(state.viewmodel_fields,z,f.viewmodel_z);
+        }else{
+            restore_environment_field(state.viewmodel_fields,x);
+            restore_environment_field(state.viewmodel_fields,y);
+            restore_environment_field(state.viewmodel_fields,z);
+        }
         const int fov_offset=environment_offset(state,"C_CSPlayerPawn","m_flViewmodelFOV");
         if(f.viewmodel_fov_override)environment_write(state.viewmodel_fields,fov_offset,f.viewmodel_fov);
         else restore_environment_field(state.viewmodel_fields,fov_offset);
     }
-    if(!f.viewmodel_override)state.viewmodel_override.store(nullptr);
+    if(!f.viewmodel_override && !f.viewmodel_fov_override)state.viewmodel_override.store(nullptr);
     if(!camera)return;
     const int scoped=environment_offset(state,"C_CSPlayerPawn","m_bIsScoped");
-    if(f.custom_fov && scoped>=0 && !get<bool>(pawn+scoped)){
-        environment_write(state.camera_fields,environment_offset(state,"CCSPlayerBase_CameraServices","m_iFOV"),static_cast<std::uint32_t>(f.fov));
-        environment_write(state.camera_fields,environment_offset(state,"CCSPlayerBase_CameraServices","m_iFOVStart"),static_cast<std::uint32_t>(f.fov));
+    const auto is_scoped=scoped>=0 ? memory::read<bool>(pawn+scoped) : std::nullopt;
+    if(is_scoped && (*is_scoped ? f.scope_fov_override : f.custom_fov)){
+        const float fov=*is_scoped ? f.scope_fov : f.fov;
+        environment_write(state.camera_fields,environment_offset(state,"CCSPlayerBase_CameraServices","m_iFOV"),static_cast<std::uint32_t>(fov));
+        environment_write(state.camera_fields,environment_offset(state,"CCSPlayerBase_CameraServices","m_iFOVStart"),static_cast<std::uint32_t>(fov));
     }else restore_environment_entity(state.camera_fields);
 }
 }

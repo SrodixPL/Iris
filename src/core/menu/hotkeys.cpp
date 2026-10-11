@@ -329,13 +329,13 @@ bool known_binding(ImGuiID id) {
   const auto hash=[](const std::string& path){return ImHashStr(path.c_str(),0,ImHashStr("option bindings"));};
   for(const auto& node:feature_tree::nodes){
     const std::string_view path=node.path;
-    if(node.kind==feature_tree::Kind::Panel || path.starts_with("Combat/Rage/Anti-Aim"))continue;
+    if(node.kind==feature_tree::Kind::Panel || !feature_switches::wired(path))continue;
     if(path.starts_with("Misc/Misc/Movement/") && !feature_switches::wired(path))continue;
     if(hash(std::string("Preview/")+node.path)==id)return true;
   }
-  constexpr const char* paths[]{"Targeting/no_spread","Targeting/auto_fire","Targeting/compensate","Targeting/visualize_fov","Targeting/aim_fov","Targeting/hitboxes","Targeting/silent_aim","Targeting/remove_recoil","Targeting/multipoint","Targeting/multipoint_scale","Targeting/quick_stop","Targeting/quick_scope","Targeting/delay_shot","Targeting/health_damage","Targeting/shot_delay","Camera/thirdperson","Camera/custom_fov","Camera/fov","Viewmodel/enabled","Viewmodel/x","Viewmodel/y","Viewmodel/z","Viewmodel/fov","Movement/bhop","Movement/assist","Movement/strength","Quality of life/accept","Quality of life/killfeed","HUD/scope_lines","HUD/inaccuracy_overlay","HUD/crosshair_mode","HUD/scope_gap","HUD/scope_length","HUD/scope_thickness","Environment/enabled","Color & light/night","Color & light/brightness","Color & light/vibrance","Color & light/contrast","Color & light/gamma","Color & light/warmth","Color & light/sharpness","Color & light/vignette","Color & light/night_intensity","Sky & ambient light/tint","Sky & ambient light/skybox","Sky & ambient light/ambient","Map fog/enabled","Map fog/density","Map fog/distance","Weather/weather","Weather/intensity","Weather/wind","World tint/enabled","Lighting/enabled","Post-processing/bloom_enabled","Depth of field/enabled","Weather/wetness_enabled","Smoke/enabled","Removals/fog","Removals/shadows","Removals/sky","Removals/3d_sky","Removals/flash","Removals/smoke","Removals/ragdolls","Post-processing/exposure","Sky & ambient light/brightness","Lighting/intensity","Post-processing/bloom","Weather/wetness","Map fog/start","Map fog/falloff","Depth of field/near_blurry","Depth of field/near_crisp","Depth of field/far_crisp","Depth of field/far_blurry"};
+  constexpr const char* paths[]{"Camera/thirdperson","Camera/custom_fov","Camera/fov","Viewmodel/enabled","Viewmodel/x","Viewmodel/y","Viewmodel/z","Viewmodel/fov","Movement/bhop","Movement/assist","Movement/strength","Quality of life/accept","Quality of life/killfeed","HUD/scope_lines","HUD/inaccuracy_overlay","HUD/crosshair_mode","HUD/scope_gap","HUD/scope_length","HUD/scope_thickness","Environment/enabled","Color & light/night","Color & light/brightness","Color & light/vibrance","Color & light/contrast","Color & light/gamma","Color & light/warmth","Color & light/sharpness","Color & light/vignette","Color & light/night_intensity","Sky & ambient light/tint","Sky & ambient light/skybox","Sky & ambient light/ambient","Map fog/enabled","Map fog/density","Map fog/distance","Weather/weather","Weather/intensity","Weather/wind","World tint/enabled","Lighting/enabled","Post-processing/bloom_enabled","Depth of field/enabled","Weather/wetness_enabled","Smoke/enabled","Removals/fog","Removals/shadows","Removals/sky","Removals/3d_sky","Removals/flash","Removals/smoke","Removals/ragdolls","Post-processing/exposure","Sky & ambient light/brightness","Lighting/intensity","Post-processing/bloom","Weather/wetness","Map fog/start","Map fog/falloff","Depth of field/near_blurry","Depth of field/near_crisp","Depth of field/far_crisp","Depth of field/far_blurry"};
   for(const auto* path:paths)if(hash(path)==id)return true;
-  for(const auto* path:{"Targeting/through_walls","Targeting/highlight_target","Targeting/minimum_damage","Targeting/hit_chance","Legit aim/hitboxes"})if(hash(path)==id)return true;
+  for(const auto* path:{"Legit aim/hitboxes"})if(hash(path)==id)return true;
   for(const auto& t:combat::legit_toggles)if(hash(std::string("Legit aim/")+t.key)==id)return true;
   for(const auto& n:combat::legit_numbers)if(hash(std::string("Legit aim/")+n.key)==id)return true;
   for(const auto& n:movement::numbers)if(hash(std::string("Movement/")+n.key)==id)return true;
@@ -375,6 +375,7 @@ std::map<ImGuiID,Option> decode(const std::string& snapshot) {
 std::string encode(const std::map<ImGuiID,Option>& values) {
   nlohmann::json json={{"hotkey_version",2},{"hotkeys",nlohmann::json::object()}};
   for(const auto& [id,option] : values) {
+    if(!known_binding(id))continue;
     nlohmann::json entries=nlohmann::json::array();
     for(const auto& hotkey : option.entries) if(hotkey.key!=ImGuiKey_None) entries.push_back({{"key",key_name(hotkey.key)},{"mode",modes[static_cast<int>(hotkey.mode)]},{"value",hotkey.value},{"visible",hotkey.visible},{"number",hotkey.number},{"selection",hotkey.selection}});
     if(entries.empty()) continue;

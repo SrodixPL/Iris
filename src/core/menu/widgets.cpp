@@ -886,6 +886,15 @@ bool begin_group(const char* id,const char* title) {
   return visible;
 }
 void end_group() { ImGui::PopID(); ImGui::EndChild(); }
+bool selection_button(const char* label,bool selected,ImVec2 size,bool disabled) {
+  ImGui::BeginDisabled(disabled);
+  ImGui::PushStyleColor(ImGuiCol_Button,selected?theme::active:theme::raised);
+  ImGui::PushStyleColor(ImGuiCol_Text,selected?theme::accent:theme::secondary);
+  const bool clicked=button(label,size);
+  if(ImGui::IsItemHovered()&&ImGui::CalcTextSize(label).x>size.x-2*ImGui::GetStyle().FramePadding.x)ImGui::SetTooltip("%s",label);
+  if(selected)ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),ImGui::GetItemRectMax(),ImGui::GetColorU32(theme::accent),theme::control_radius*scale(),0,theme::surface_border_width*scale());
+  ImGui::PopStyleColor(2);ImGui::EndDisabled();return clicked;
+}
 namespace {
 unsigned packed_color(ImVec4 color) {
   const auto channel=[](float value) { return static_cast<unsigned>(std::clamp(value,0.f,1.f)*255+.5f); };
@@ -954,7 +963,7 @@ bool alpha_rail(ImVec4& color,float width) {
   draw->AddRectFilled({p.x+color.w*rail_width-2*s,p.y-2*s},{p.x+color.w*rail_width+2*s,p.y+height+2*s},IM_COL32_WHITE,2*s);
   return changed;
 }
-bool spectrum(ImVec4& color,float width) {
+bool spectrum(ImVec4& color,float width,bool alpha) {
   const float s=scale();float hue{},sat{},brightness{};
   ImGui::ColorConvertRGBtoHSV(color.x,color.y,color.z,hue,sat,brightness);
   auto* storage=ImGui::GetStateStorage();const auto hue_id=ImGui::GetID("spectrum_hue");
@@ -978,15 +987,14 @@ bool spectrum(ImVec4& color,float width) {
   if(ImGui::IsItemActive()&&ImGui::IsMouseDown(0)){hue=std::clamp((ImGui::GetIO().MousePos.x-rail.x)/width,0.f,.9999f);storage->SetFloat(hue_id,hue);changed=true;}
   draw->AddRectFilled({rail.x+hue*width-2*s,rail.y-2*s},{rail.x+hue*width+2*s,rail.y+rail_height+2*s},IM_COL32_WHITE,2*s);
   if(changed)ImGui::ColorConvertHSVtoRGB(hue,sat,brightness,color.x,color.y,color.z);
-  ImGui::Dummy({0,3*s});
-  changed|=alpha_rail(color,width);
+  if(alpha) { ImGui::Dummy({0,3*s}); changed|=alpha_rail(color,width); }
   return changed;
 }
 }
-bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelectorState& editor,ColorPalette& palette,bool disabled,bool compact) {
+namespace {
+bool color_control(const char* label,ImVec4& color,ColorSelectorState& editor,ColorPalette& palette,bool disabled,bool alpha,float trigger_width) {
   const float s=scale();
-  const float trigger_width=32*s;
-  Row row(id,label,trigger_width,disabled,compact);
+
   char value[7]; color_hex(value,color);
   ImGui::PushStyleColor(ImGuiCol_Button,{0,0,0,0});
   const bool clicked=widgets::button("##color_value",{trigger_width,theme::input_height*s});
@@ -995,9 +1003,11 @@ bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelector
   auto* draw=ImGui::GetWindowDrawList();
   const auto at=editor.trigger.min;
   const float inset=5*s;
-  draw->AddRectFilled({at.x+inset,at.y+inset},{editor.trigger.max.x-inset,editor.trigger.max.y-inset},ImGui::GetColorU32(color),3*s);
+  const ImVec4 swatch{color.x,color.y,color.z,alpha?color.w:1.f};
+  draw->AddRectFilled({at.x+inset,at.y+inset},{editor.trigger.max.x-inset,editor.trigger.max.y-inset},ImGui::GetColorU32(swatch),3*s);
   draw->AddRect({at.x+inset,at.y+inset},{editor.trigger.max.x-inset,editor.trigger.max.y-inset},ImGui::GetColorU32(theme::border),3*s);
   if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s  #%s",label,value);
+  if(disabled)editor.request_open=false;
   if(!disabled && (clicked || editor.request_open)) {
     editor.original=color; color_hex(editor.hex,color); editor.error.clear();
     editor.request_open=false; ImGui::OpenPopup("color_picker");
@@ -1005,12 +1015,13 @@ bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelector
   const auto* parent=ImGui::GetCurrentWindow();
   const Bounds anchor=(parent->Flags&ImGuiWindowFlags_Popup) ? Bounds{parent->Pos,{parent->Pos.x+parent->Size.x,parent->Pos.y+parent->Size.y}} : editor.trigger;
   if(!begin_popup("color_picker",anchor,theme::color_popup_width,theme::color_popup_height,nullptr,true,false,false,true,false,false,{10,10})) return false;
+  ImGui::BeginDisabled(disabled);
   ImGui::PushStyleColor(ImGuiCol_NavCursor,{0,0,0,0});
   editor.popup={ImGui::GetWindowPos(),{ImGui::GetWindowPos().x+ImGui::GetWindowSize().x,ImGui::GetWindowPos().y+ImGui::GetWindowSize().y}};
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{theme::setting_gap*s,6*s});
   bool changed=false;
   ImGui::SetNextItemWidth(std::min(theme::color_picker_width*s,ImGui::GetContentRegionAvail().x));
-  if(spectrum(color,std::min(theme::color_picker_width*s,ImGui::GetContentRegionAvail().x))) { changed=true; editor.error.clear(); }
+  if(spectrum(color,std::min(theme::color_picker_width*s,ImGui::GetContentRegionAvail().x),alpha)) { changed=true; editor.error.clear(); }
   ImGui::BeginGroup();
   ImGui::TextColored(theme::secondary,"Current");
   ImGui::ColorButton("##current",color,ImGuiColorEditFlags_NoAlpha,{theme::color_preview*s,theme::color_preview*s});
@@ -1027,7 +1038,7 @@ bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelector
   if(entered) {
     unsigned hex{}; const auto length=std::char_traits<char>::length(editor.hex);
     const auto parsed=std::from_chars(editor.hex,editor.hex+length,hex,16);
-    if(length==6 && parsed.ec==std::errc{}) { const float alpha=color.w;color=unpacked_color(hex);color.w=alpha;changed=true; editor.error.clear(); }
+    if(length==6 && parsed.ec==std::errc{}) { const float previous_alpha=color.w;color=unpacked_color(hex);color.w=previous_alpha;changed=true; editor.error.clear(); }
     else editor.error="Enter six hex digits.";
   }
   ImGui::TextColored(theme::secondary,"Saved colors");
@@ -1037,7 +1048,7 @@ bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelector
     if(!palette.slots[i])continue;
     if(visible++%7)ImGui::SameLine(0,theme::color_slot_gap*s);
     ImGui::PushID(static_cast<int>(i)+4);
-    if(ImGui::ColorButton("##saved",*palette.slots[i],ImGuiColorEditFlags_NoAlpha,{theme::color_slot*s,theme::color_slot*s})) {color=*palette.slots[i];changed=true;}
+    if(ImGui::ColorButton("##saved",*palette.slots[i],ImGuiColorEditFlags_NoAlpha,{theme::color_slot*s,theme::color_slot*s})) {const float previous_alpha=color.w;color=*palette.slots[i];if(!alpha)color.w=previous_alpha;changed=true;}
     editor.slots[i]={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
     if(ImGui::IsItemClicked(ImGuiMouseButton_Right))ImGui::OpenPopup("delete_color");
     if(begin_popup("delete_color",editor.slots[i],200,110,nullptr,true)) {
@@ -1073,17 +1084,29 @@ bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelector
   if(!editing) color_hex(editor.hex,color);
   ImGui::PopStyleVar();
   ImGui::PopStyleColor();
+  ImGui::EndDisabled();
   end_popup();
   return changed;
 }
-bool toggle(const char* id,const char* label,bool& value,bool disabled,const PopupContents* settings,bool hotkey_enabled,bool compact,ImGuiID binding) {
+}
+bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelectorState& editor,ColorPalette& palette,bool disabled,bool compact,bool alpha) {
+  Row row(id,label,32*scale(),disabled,compact);
+  return color_control(label,color,editor,palette,disabled,alpha,32*scale());
+}
+bool toggle(const char* id,const char* label,bool& value,bool disabled,const PopupContents* settings,bool hotkey_enabled,bool compact,ImGuiID binding,const ColorAffordance* color) {
   const float s=scale();
-  const float controls=(theme::switch_width+(settings ? theme::more_width+theme::setting_gap : 0))*s;
+  const float controls=(theme::switch_width+((settings || color) ? theme::more_width+theme::setting_gap : 0))*s;
   Row row(id,label,controls,disabled,compact,binding);
   const auto hotkey_id=binding ? binding : ImGui::GetID("hotkeys");
   const bool bound=hotkey_enabled && hotkeys::evaluate(hotkey_id,value,disabled);
 
-  settings_action(settings);
+  bool color_changed=false;
+  if(color) {
+    ImGui::BeginDisabled(!value);
+    color_changed=color_control(label,color->color,color->editor,color->palette,disabled||!value,color->alpha,theme::more_width*s);
+    ImGui::EndDisabled();
+    ImGui::SameLine(0,theme::setting_gap*s);
+  } else settings_action(settings);
   const auto p=ImGui::GetCursorScreenPos();
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered,{0,0,0,0});
   ImGui::PushStyleColor(ImGuiCol_ButtonActive,{0,0,0,0});
@@ -1103,16 +1126,20 @@ bool toggle(const char* id,const char* label,bool& value,bool disabled,const Pop
   const float inset=(theme::input_height-theme::switch_height)*s*.5f;
   const ImVec2 start{p.x,p.y+inset},end{p.x+theme::switch_width*s,p.y+inset+theme::switch_height*s};
   const auto off=ImGui::IsItemHovered(ImGuiHoveredFlags_NoNavOverride) && !disabled ? theme::mix(theme::track,theme::text,.06f) : theme::track;
-  const ImVec4 color{off.x+(theme::accent.x-off.x)*position,off.y+(theme::accent.y-off.y)*position,
+  const ImVec4 track_color{off.x+(theme::accent.x-off.x)*position,off.y+(theme::accent.y-off.y)*position,
     off.z+(theme::accent.z-off.z)*position,off.w+(theme::accent.w-off.w)*position};
-  draw->AddRectFilled(start,end,ImGui::GetColorU32(color),theme::switch_height*s*.5f);
+  draw->AddRectFilled(start,end,ImGui::GetColorU32(track_color),theme::switch_height*s*.5f);
   const float knob=theme::switch_height-4;
   const float knob_x=p.x+(2+(theme::switch_width-theme::switch_height)*position)*s;
   const ImVec2 thumb{knob_x+knob*s*.5f,start.y+theme::switch_height*s*.5f};
   draw->AddCircleFilled({thumb.x,thumb.y+1*s},knob*s*.5f,IM_COL32(0,0,0,48),24);
   draw->AddCircleFilled(thumb,knob*s*.5f,ImGui::GetColorU32(ImVec4{1,1,1,position*.06f+.94f}),24);
   row_hotkeys(row,hotkeys::Kind::Boolean,id,hotkey_enabled,binding);
-  return clicked || bound;
+  return clicked || bound || color_changed;
+}
+bool toggle_color(const char* id,const char* label,bool& value,ImVec4& color,ColorSelectorState& editor,ColorPalette& palette,bool disabled,ImGuiID binding,bool alpha) {
+  const ColorAffordance affordance{color,editor,palette,alpha};
+  return toggle(id,label,value,disabled,nullptr,true,true,binding,&affordance);
 }
 bool toggle_more(const char* id,const char* label,bool& value,const PopupContents& settings,bool disabled,bool hotkey_enabled) {
   return toggle(id,label,value,disabled,&settings,hotkey_enabled);
@@ -1250,16 +1277,17 @@ bool combo(const char* id,const char* label,int& selected,std::span<const Option
 bool combo_more(const char* id,const char* label,int& selected,std::span<const Option> options,const PopupContents& settings,bool disabled,bool hotkey_enabled) {
   return combo(id,label,selected,options,disabled,&settings,hotkey_enabled);
 }
-bool multi_combo(const char* id,const char* label,std::span<bool> selected,std::span<const Option> options,const char* title,bool disabled,SelectionSummary summary,bool hotkey_enabled,ImGuiID binding_id) {
+bool multi_combo(const char* id,const char* label,std::span<bool> selected,std::span<const Option> options,const char* title,bool disabled,SelectionSummary summary,bool hotkey_enabled,ImGuiID binding_id,const ColorAffordance* color) {
   const float s=scale();
   const bool valid=selected.size()==options.size() && !options.empty();
   const float control_width=std::min(theme::setting_control*s,ImGui::GetContentRegionAvail().x);
-  Row row(id,label,control_width,disabled || !valid,false,binding_id);
+  Row row(id,label,control_width+(color?(theme::more_width+theme::setting_gap)*s:0),disabled || !valid,false,binding_id);
   const auto hotkey_id=binding_id ? binding_id : ImGui::GetID("hotkeys");
   auto& binding=hotkeys::option(hotkey_id); binding.kind=hotkeys::Kind::Multi; binding.choices.clear(); binding.choice_disabled.clear();
   for(const auto& item : options) { binding.choices.emplace_back(item.label); binding.choice_disabled.push_back(item.disabled); }
   const bool bound=hotkey_enabled && hotkeys::evaluate(hotkey_id,selected,disabled || !valid);
   bool changed=false;
+  if(color){changed|=color_control(label,color->color,color->editor,color->palette,disabled||!valid,color->alpha,theme::more_width*s);ImGui::SameLine(0,theme::setting_gap*s);}
   ImGui::PushStyleColor(ImGuiCol_Button,theme::raised);
   const bool clicked=widgets::button("##value",{control_width,theme::input_height*s},ImGuiButtonFlags_NoHoveredOnFocus);
   ImGui::PopStyleColor();

@@ -131,6 +131,10 @@
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\features\inventory\inventory.hpp" />
+    <ClCompile Include="src\core\features\inventory\music.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\music.hpp" />
     <ClInclude Include="src\core\features\inventory\patch.hpp" />
     <ClCompile Include="src\core\features\inventory\preview.cpp">
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
@@ -167,6 +171,10 @@
       <ObjectFileName>$(IntDir)src\core\features\player\esp\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\features\player\esp\drawing.hpp" />
+    <ClCompile Include="src\core\features\player\esp\elements.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\player\esp\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\esp\elements.hpp" />
     <ClCompile Include="src\core\features\player\esp\esp.cpp">
       <ObjectFileName>$(IntDir)src\core\features\player\esp\</ObjectFileName>
     </ClCompile>
@@ -214,6 +222,11 @@
       <ObjectFileName>$(IntDir)src\core\features\world\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\features\world\environment.hpp" />
+    <ClCompile Include="src\core\features\world\esp.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\world\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\world\esp.hpp" />
+    <ClInclude Include="src\core\features\world\esp_settings.hpp" />
     <ClCompile Include="src\core\features\world\native.cpp">
       <ObjectFileName>$(IntDir)src\core\features\world\</ObjectFileName>
     </ClCompile>
@@ -273,6 +286,10 @@
     <ClCompile Include="src\core\menu\config_ui.cpp">
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="src\core\menu\esp_preview.cpp">
+      <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\esp_preview.hpp" />
     <ClCompile Include="src\core\menu\feature_bindings.cpp">
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>
@@ -316,6 +333,10 @@
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\menu\inventory_picker.hpp" />
+    <ClCompile Include="src\core\menu\legit_profiles.cpp">
+      <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\legit_profiles.hpp" />
     <ClInclude Include="src\core\menu\menu.hpp" />
     <ClCompile Include="src\core\menu\menu_state.cpp">
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
@@ -369,6 +390,7 @@
     <None Include="src\core\sdk\generated\catalog_manifest.json" />
     <ClInclude Include="src\core\sdk\generated\client_bindings.hpp" />
     <ClInclude Include="src\core\sdk\generated\finish_colors.inc" />
+    <ClInclude Include="src\core\sdk\generated\music_catalog.inc" />
     <ClInclude Include="src\core\sdk\generated\skin_catalog.inc" />
     <ClInclude Include="src\core\sdk\generated\thumbnail_sources.inc" />
     <ClInclude Include="src\core\sdk\generated\weapon_catalog.inc" />

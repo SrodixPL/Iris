@@ -64,3 +64,4 @@
 {518, "Survival Knife", "weapons/models/knife/knife_canis/weapon_knife_canis.vmdl", true, 3, false},
 {523, "Talon Knife", "weapons/models/knife/knife_talon/weapon_knife_talon.vmdl", true, 3, false},
 {519, "Ursus Knife", "weapons/models/knife/knife_ursus/weapon_knife_ursus.vmdl", true, 3, false},
+{31, "Zeus x27", "weapons/models/taser/weapon_pist_taser.vmdl", false, 3, false},

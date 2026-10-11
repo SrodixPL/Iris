@@ -15,7 +15,47 @@ int virtual_key(ImGuiKey key) {
     return '0' + key - ImGuiKey_0;
   if (key >= ImGuiKey_F1 && key <= ImGuiKey_F24)
     return VK_F1 + key - ImGuiKey_F1;
+  if(key>=ImGuiKey_Keypad0 && key<=ImGuiKey_Keypad9)return VK_NUMPAD0+key-ImGuiKey_Keypad0;
   switch (key) {
+  case ImGuiKey_MouseLeft:return VK_LBUTTON;
+  case ImGuiKey_MouseRight:return VK_RBUTTON;
+  case ImGuiKey_MouseMiddle:return VK_MBUTTON;
+  case ImGuiKey_MouseX1:return VK_XBUTTON1;
+  case ImGuiKey_MouseX2:return VK_XBUTTON2;
+  case ImGuiKey_LeftShift:return VK_LSHIFT;
+  case ImGuiKey_RightShift:return VK_RSHIFT;
+  case ImGuiKey_LeftCtrl:return VK_LCONTROL;
+  case ImGuiKey_RightCtrl:return VK_RCONTROL;
+  case ImGuiKey_LeftAlt:return VK_LMENU;
+  case ImGuiKey_RightAlt:return VK_RMENU;
+  case ImGuiKey_LeftSuper:return VK_LWIN;
+  case ImGuiKey_RightSuper:return VK_RWIN;
+  case ImGuiKey_Menu:return VK_APPS;
+  case ImGuiKey_End:return VK_END;
+  case ImGuiKey_CapsLock:return VK_CAPITAL;
+  case ImGuiKey_ScrollLock:return VK_SCROLL;
+  case ImGuiKey_NumLock:return VK_NUMLOCK;
+  case ImGuiKey_PrintScreen:return VK_SNAPSHOT;
+  case ImGuiKey_Pause:return VK_PAUSE;
+  case ImGuiKey_Apostrophe:return VK_OEM_7;
+  case ImGuiKey_Comma:return VK_OEM_COMMA;
+  case ImGuiKey_Minus:return VK_OEM_MINUS;
+  case ImGuiKey_Period:return VK_OEM_PERIOD;
+  case ImGuiKey_Slash:return VK_OEM_2;
+  case ImGuiKey_Semicolon:return VK_OEM_1;
+  case ImGuiKey_Equal:return VK_OEM_PLUS;
+  case ImGuiKey_LeftBracket:return VK_OEM_4;
+  case ImGuiKey_RightBracket:return VK_OEM_6;
+  case ImGuiKey_Backslash:return VK_OEM_5;
+  case ImGuiKey_GraveAccent:return VK_OEM_3;
+  case ImGuiKey_KeypadDecimal:return VK_DECIMAL;
+  case ImGuiKey_KeypadDivide:return VK_DIVIDE;
+  case ImGuiKey_KeypadMultiply:return VK_MULTIPLY;
+  case ImGuiKey_KeypadSubtract:return VK_SUBTRACT;
+  case ImGuiKey_KeypadAdd:return VK_ADD;
+  case ImGuiKey_KeypadEnter:return VK_RETURN;
+  case ImGuiKey_AppBack:return VK_BROWSER_BACK;
+  case ImGuiKey_AppForward:return VK_BROWSER_FORWARD;
   case ImGuiKey_Escape:
     return VK_ESCAPE;
   case ImGuiKey_Delete:
@@ -49,7 +89,8 @@ int virtual_key(ImGuiKey key) {
   }
 }
 ImGuiKey imgui_key(int vk) {
-  for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_MouseLeft; ++k)
+  if(!vk)return ImGuiKey_None;
+  for (int k = ImGuiKey_NamedKey_BEGIN; k <= ImGuiKey_MouseX2; ++k)
     if (virtual_key(static_cast<ImGuiKey>(k)) == vk)
       return static_cast<ImGuiKey>(k);
   return ImGuiKey_None;

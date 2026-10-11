@@ -55,7 +55,7 @@ void update_menu_models(Runtime& state) {
             const auto team=get<std::uint8_t>(address+state.fields.team);
             const auto side=team==2?0:1;
             const auto* agent=find_agent(state.requested.agents[side]);
-            const std::string desired=!state.requested.custom_models[side].empty()?state.requested.custom_models[side]:agent?agent->model:"";
+            const std::string desired=state.requested.enabled ? (!state.requested.custom_models[side].empty()?state.requested.custom_models[side]:agent?agent->model:"") : "";
             auto saved=state.menu_players.find(identity.handle);
             if(desired.empty()){
                 if(saved!=state.menu_players.end()){
@@ -68,8 +68,12 @@ void update_menu_models(Runtime& state) {
             const auto name=scene?get<Address>(scene+state.fields.model+state.fields.model_name):0;
             if(!name)continue;
             const auto current=string_at(name);
+            if(current.empty())continue;
             if(models::same_resource_path(current,desired) && !state.menu_model_refresh)continue;
-            if(!load_resource(state,desired.c_str(),0x6c646d76))continue;
+            if(!load_resource(state,desired.c_str(),0x6c646d76)){
+                if(saved!=state.menu_players.end())state.set_model(reinterpret_cast<void*>(address),saved->second.original_model.c_str());
+                continue;
+            }
             if(saved==state.menu_players.end()){
                 ChangedWeapon original;original.entity=address;original.handle=identity.handle;original.original_model=current;
                 saved=state.menu_players.emplace(identity.handle,std::move(original)).first;

@@ -7,8 +7,8 @@
 #include <optional>
 namespace iris::movement {
 struct SteeringOptions : Options {
-    bool subtick{},only_while_holding_jump{},stop_on_shift{},stop_on_key_release{};
-    int mode{2};float direction{},turn_speed{1440};
+    bool only_while_holding_jump{},stop_on_shift{},stop_on_key_release{};
+    int mode{2};float direction{};
     bool operator==(const SteeringOptions&) const=default;
 };
 struct Settings {

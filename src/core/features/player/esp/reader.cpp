@@ -75,7 +75,7 @@ std::vector<visuals::Shape> shapes(Runtime& s,Address scene) {
 void update_player_visuals(Runtime& s) {
     const auto& config=s.requested.player_visuals;
     const auto clear=[&]{visuals::snapshot.store(nullptr);visuals::native::stop();s.player_sounds.clear();};
-    if(s.stopping||!config.enabled){clear();return;}
+    if(s.stopping||!visuals::any_esp_enabled(config)){clear();return;}
     const auto controller=memory::read<Address>(s.client+bindings::local_controller).value_or(0);
     const auto local=controller?entity(s,memory::read<std::uint32_t>(controller+s.fields.pawn).value_or(0xffffffff)):0;
     if(!local||field<int>(s,local,"C_BaseEntity","m_iHealth")<=0){clear();return;}
@@ -100,7 +100,7 @@ void update_player_visuals(Runtime& s) {
         const auto pawn=entity(s,pawn_handle);if(!pawn||pawn==local)continue;
         visuals::Player p;p.health=field<int>(s,pawn,"C_BaseEntity","m_iHealth");if(p.health<=0||p.health>1000)continue;
         const int player_team=field<std::uint8_t>(s,pawn,"C_BaseEntity","m_iTeamNum");if(player_team<2||player_team>3)continue;
-        p.enemy=player_team!=team;if(!p.enemy&&!config.teammates)continue;
+        p.enemy=player_team!=team;const auto target_config=visuals::for_target(config,p.enemy);if(!target_config.enabled)continue;
         const auto scene=field<Address>(s,pawn,"C_BaseEntity","m_pGameSceneNode");
         if(!scene||field<bool>(s,scene,"CGameSceneNode","m_bDormant",true))continue;
         p.origin=field<Vector>(s,scene,"CGameSceneNode","m_vecAbsOrigin");if(!finite(p.origin))continue;
@@ -111,7 +111,7 @@ void update_player_visuals(Runtime& s) {
         if(!finite(p.minimum)||!finite(p.maximum)||p.maximum.z<=p.minimum.z)continue;
         const auto view=field<Vector>(s,pawn,"C_BaseModelEntity","m_vecViewOffset");
         p.visible=visible(s,local,pawn,eye,p.origin+view);
-        if(config.name){const int offset=environment_offset(s,"CBasePlayerController","m_iszPlayerName");if(offset>=0){std::array<char,128> name{};if(memory::read(identity->entity+offset,std::as_writable_bytes(std::span{name}))){name.back()=0;p.name=name.data();}}}
+        if(target_config.name){const int offset=environment_offset(s,"CBasePlayerController","m_iszPlayerName");if(offset>=0){std::array<char,128> name{};if(memory::read(identity->entity+offset,std::as_writable_bytes(std::span{name}))){name.back()=0;p.name=name.data();}}}
         p.armor=field<int>(s,pawn,"C_CSPlayerPawn","m_ArmorValue");
         const auto items=field<Address>(s,pawn,"C_BasePlayerPawn","m_pItemServices");
         p.flags[0]=field<bool>(s,pawn,"C_CSPlayerPawn","m_bIsDefusing");p.flags[1]=field<bool>(s,items,"CCSPlayer_ItemServices","m_bHasDefuser");
@@ -127,7 +127,7 @@ void update_player_visuals(Runtime& s) {
         p.flags[7]=field<std::uint32_t>(s,hostage,"CCSPlayer_HostageServices","m_hCarriedHostage",0xffffffff)!=0xffffffff;
         p.flags[8]=p.armor>0;
         if(config.sounds&&p.enemy){p.sound_age=s.player_sounds[pawn_handle].sample(pawn,field<float>(s,pawn,"C_CSPlayerPawn","m_flEmitSoundTime",-1),GetTickCount64());active_sounds.insert(pawn_handle);}
-        if(services&&config.flags[5]){
+        if(services&&target_config.flags[5]){
             const auto vector=services+s.fields.weapons;
             const auto count=memory::read<std::uint64_t>(vector).value_or(0),handles=memory::read<Address>(vector+8).value_or(0);
             if(count<=64&&handles)for(std::uint64_t j=0;j<count;++j){const auto held=entity(s,memory::read<std::uint32_t>(handles+j*4).value_or(0xffffffff));if(held&&memory::read<std::uint16_t>(held+s.fields.attributes+s.fields.item+s.fields.definition).value_or(0)==49){p.flags[5]=true;p.planting=field<bool>(s,held,"C_C4","m_bStartedArming");break;}}
@@ -139,7 +139,7 @@ void update_player_visuals(Runtime& s) {
             const auto vdata=memory::read<Address>(weapon+sdk::binding_values::layout_weapon_vdata).value_or(0);
             p.max_clip=field<int>(s,vdata,"CBasePlayerWeaponVData","m_iMaxClip1");
         }
-        if(config.skeleton||config.hitboxes)try {p.shapes=shapes(s,scene);}catch(const std::exception&){}
+        if(target_config.skeleton||target_config.hitboxes)try {p.shapes=shapes(s,scene);}catch(const std::exception&){}
         if((config.glow||config.chams)&&p.enemy){
             const int glow=environment_offset(s,"C_BaseModelEntity","m_Glow");
             const auto pawn_chunk=memory::read<Address>(chunks+((pawn_handle&0x7fff)>>9)*sizeof(Address)).value_or(0);

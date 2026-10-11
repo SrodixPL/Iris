@@ -141,8 +141,10 @@ void render(State& state) {
       widgets::section(i==0 ? "combat" : i==2 ? "visuals" : "misc",i==0 ? "COMBAT" : i==2 ? "VISUALS" : "MISC",state);
     }
     const auto page=static_cast<Page>(i);
+    ImGui::BeginDisabled(page==Page::Rage);
     if(widgets::navigation(page_names[i],page_names[i],state.selected==page,
        ImGui::GetContentRegionAvail().x,state,state.navigation[i])) state.selected=page;
+    ImGui::EndDisabled();
   }
   const auto& selected=state.navigation[static_cast<size_t>(state.selected)];
   const float target=(selected.min.y-nav_origin.y)/s;

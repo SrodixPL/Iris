@@ -4,6 +4,7 @@
 #include "core/thread_state.hpp"
 #include <array>
 #include "core/features/world/render.hpp"
+#include "core/features/world/esp.hpp"
 #include "core/features/combat/nospread.hpp"
 #include "core/features/combat/targeting.hpp"
 #include "core/features/player/visuals.hpp"
@@ -165,14 +166,17 @@ bool iris::renderer::render() noexcept {
             const auto art=cache->art(definition,0);
             return iris::visuals::Icon{art.texture.GetTexID(),art.uv0.x,art.uv0.y,art.uv1.x,art.uv1.y,art.aspect};
         },::menu.images.get());
+        DWORD world_foreground{};GetWindowThreadProcessId(GetForegroundWindow(),&world_foreground);
+        if(!menu_visible && world_foreground==GetCurrentProcessId())iris::world::esp::draw();
         const auto targeting=iris::nospread::settings.load();
         const auto aiming=iris::nospread::aim_settings.load();
+        const auto legit=aiming?aiming->resolve(iris::nospread::legit_weapon_definition.load()):iris::combat::LegitSettings{};
         const bool rage_fov=iris::nospread::rage_active() && targeting && targeting->visualize_fov;
-        const bool legit_fov=!iris::nospread::rage_active() && aiming && aiming->legit.enabled && aiming->legit.visualize_fov;
+        const bool legit_fov=!iris::nospread::rage_active() && legit.enabled && legit.visualize_fov;
         DWORD foreground_pid{};GetWindowThreadProcessId(GetForegroundWindow(),&foreground_pid);
         if(!menu_visible && !iris::nospread::stopped && foreground_pid==GetCurrentProcessId() && iris::nospread::player_alive && (rage_fov || legit_fov)) {
             const auto size=ImGui::GetIO().DisplaySize;
-            const auto radius=iris::nospread::fov_radius(rage_fov?targeting->fov:aiming->legit.fov,iris::nospread::camera_fov.load(),size.y);
+            const auto radius=iris::nospread::fov_radius(rage_fov?targeting->fov:legit.effective_fov(iris::nospread::camera_fov.load()),iris::nospread::camera_fov.load(),size.y);
             if(radius>0 && radius<std::hypot(size.x,size.y)*.5f) {
                 auto* draw=ImGui::GetBackgroundDrawList();
                 const ImVec2 center{size.x*.5f,size.y*.5f};

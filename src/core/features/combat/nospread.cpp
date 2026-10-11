@@ -111,6 +111,8 @@ struct State {
     std::optional<ShotRequest> shot_request;
     std::deque<WireSnapshot> wire;
     std::optional<ViewPlan> view_plan;
+    std::shared_ptr<const combat::Settings> view_generation;
+    std::optional<std::array<std::int64_t,5>> legit_decision;
     std::uint64_t jump_writes{},jump_retries{};
     Vector observed_velocity{};int observed_landing{};bool observed_grounded{};
     bool observed_held{},observed_activation{},observed_native_input{};
@@ -120,8 +122,11 @@ struct State {
     Address view_pawn{},view_weapon{};
     std::uint32_t view_pawn_handle{},view_weapon_handle{};
     std::uint32_t locked_target{};
+    Vector smooth_rates{};
     std::chrono::steady_clock::time_point last_view{},acquired{};
     combat::ShotConfirmation shot_confirmation;
+    combat::ShotConfirmation trigger_confirmation;
+    std::chrono::steady_clock::time_point last_trigger{};
     std::int64_t processed{};int processed_tick{},processed_seed{};Address processed_pawn{};std::uint32_t processed_handle{},processed_weapon{};Settings processed_config;
     ULONGLONG preview_sampled{};
     std::int64_t observed_command{};int observed_legacy{},observed_seed{},observed_history{};std::uint32_t observed_presence{};
@@ -153,7 +158,7 @@ State* state{};
 bool context() {
     DWORD pid{};GetWindowThreadProcessId(GetForegroundWindow(),&pid);
     const auto aim=aim_settings.load();const auto motion=movement_settings.load();
-    return !stopped && (hud_enabled || (motion && motion->active()) || rage_active() || (aim && (aim->legit.enabled || aim->legit.recoil_control || aim->legit.trigger))) && pid==GetCurrentProcessId() && !renderer::menu_open();
+    return !stopped && (hud_enabled || (motion && motion->active()) || rage_active() || (aim && aim->active())) && pid==GetCurrentProcessId() && !renderer::menu_open();
 }
 Address controller_at(int index) {
     const auto chunks=read_native<Address>(state->client+cosmetics::bindings::entity_chunks);
@@ -172,7 +177,7 @@ Vector position(Address pawn,float height=1) {
     return origin+view*height;
 }
 struct HitboxPoint {int region{};Vector point{};bool secondary{};std::array<Vector,8> corners{};};
-std::vector<HitboxPoint> hitbox_points(Address scene,bool multipoint=false,float multipoint_scale=.5f) {
+std::vector<HitboxPoint> hitbox_points(Address scene,bool multipoint=false,float multipoint_scale=.5f,bool include_limbs=false) {
     const auto model_state=scene+state->f.model;
     const auto handle=read_native<Address>(model_state+state->f.model_handle);
     const auto model=handle?read_native<Address>(handle):0;
@@ -214,7 +219,7 @@ std::vector<HitboxPoint> hitbox_points(Address scene,bool multipoint=false,float
             if(bounds){for(int j=0;j<8;++j){const auto lo=(*bounds)[0],hi=(*bounds)[1];const auto corner=transform_point(*transform,{j&1?hi.x:lo.x,j&2?hi.y:lo.y,j&4?hi.z:lo.z});if(!corner){valid=false;break;}geometry.corners[j]=*corner;}}
         }
         if(valid)result.push_back(geometry);
-        if(multipoint && region<4){const float spread=.3f*std::clamp(multipoint_scale,.1f,1.f);for(const float fraction:{.5f-spread,.5f+spread}){
+        if(multipoint && (region<4||include_limbs)){const float spread=.3f*std::clamp(multipoint_scale,.1f,1.f);for(const float fraction:{.5f-spread,.5f+spread}){
             const auto alternate=transform_point(*transform,mins+(maxs-mins)*fraction);
             if(alternate && point && length(*alternate-*point)>.25f){auto extra=geometry;extra.point=*alternate;extra.secondary=true;if(valid)secondary.push_back(extra);}
         }}
@@ -272,14 +277,28 @@ float damage_at(Address weapon,Address target,Vector eye,Vector point,int region
     const auto items=read_native<Address>(target+f.items);
     return combat::direct_damage(static_cast<float>(read_native<int>(data+f.damage)),read_native<float>(data+f.head_multiplier),read_native<float>(data+f.range_modifier),length(point-eye),region,read_native<int>(target+f.armor),items && read_native<bool>(items+f.helmet),read_native<float>(data+f.armor_ratio));
 }
-float shot_damage(Address pawn,Address weapon,Address target,Vector eye,Vector point,int region,bool walls) {
+// The optional contact outputs let Trigger use the same reviewed bullet path
+// once for the actual crosshair ray, rather than simulate every enemy center.
+float shot_damage(Address pawn,Address weapon,Address target,Vector eye,Vector point,int region,bool walls,int* contacted_region=nullptr,Address* contacted_entity=nullptr) {
+    if(contacted_region)*contacted_region=-1;if(contacted_entity)*contacted_entity=0;
+    const auto eligible=[&](Address entity){
+        if(target)return entity==target;
+        if(!entity||entity==pawn)return false;
+        for(int i=1;i<=64;++i){const auto controller=controller_at(i);if(!controller||read_native<bool>(controller+state->f.hltv))continue;
+            if(sdk::entity(state->client,read_native<std::uint32_t>(controller+state->f.player_pawn))!=entity)continue;
+            return read_native<int>(entity+state->f.health)>0&&!read_native<bool>(entity+state->f.immune)&&read_native<std::uint8_t>(entity+state->f.team)!=read_native<std::uint8_t>(pawn+state->f.team);
+        }return false;
+    };
     TraceResult direct;
-    const bool unobstructed=trace_ray(pawn,eye,point,direct)&&direct.entity==target;
+    const bool unobstructed=trace_ray(pawn,eye,point,direct)&&eligible(direct.entity);
     if(!walls || unobstructed) {
         if(!unobstructed)return 0;
         const auto& result=direct;
         Vector end{};std::memcpy(&end,reinterpret_cast<const std::byte*>(&result)+0x84,sizeof(end));
-        return finite(end)?damage_at(weapon,target,eye,end,contact_region(target,result.hitbox,region)):0;
+        const auto hit_region=contact_region(result.entity,result.hitbox,region);
+        if(!finite(end)||hit_region<0||hit_region>=6)return 0;
+        if(contacted_region)*contacted_region=hit_region;if(contacted_entity)*contacted_entity=result.entity;
+        return damage_at(weapon,result.entity,eye,end,hit_region);
     }
     const auto& f=state->f;const auto data=read_native<Address>(weapon+binding_values::layout_weapon_vdata);
     if(!data || !finite(point-eye))return 0;
@@ -315,10 +334,13 @@ float shot_damage(Address pawn,Address weapon,Address target,Vector eye,Vector p
         if(contact>=contacts)return 0;
         const auto entity=sdk::entity(state->client,read_native<std::uint32_t>(surfaces+0x38*contact+0x2c));
         if(!entity)continue;
-        if(entity!=target){++state->other_contacts;continue;}
+        if(!eligible(entity)){++state->other_contacts;continue;}
         ++state->wall_hits;
-        const auto items=read_native<Address>(target+f.items);
-        return combat::direct_damage(remaining,read_native<float>(data+f.head_multiplier),1,0,contact_region(target,read_native<Address>(surfaces+0x38*contact+0x10),region),read_native<int>(target+f.armor),items&&read_native<bool>(items+f.helmet),read_native<float>(data+f.armor_ratio));
+        const auto hit_region=contact_region(entity,read_native<Address>(surfaces+0x38*contact+0x10),region);
+        if(hit_region<0||hit_region>=6)return 0;
+        if(contacted_region)*contacted_region=hit_region;if(contacted_entity)*contacted_entity=entity;
+        const auto items=read_native<Address>(entity+f.items);
+        return combat::direct_damage(remaining,read_native<float>(data+f.head_multiplier),1,0,hit_region,read_native<int>(entity+f.armor),items&&read_native<bool>(items+f.helmet),read_native<float>(data+f.armor_ratio));
     }
     return 0;
 }
@@ -457,7 +479,7 @@ void safe_process(Address command,bool view) {
         phase(1,"HUD sampling",[]{sample_hud();});
         phase(2,"movement planning",[&]{movement_command(command);const auto motion=movement_settings.load();if(motion&&motion->active()&&!round_frozen)plan_jumps(command,*motion,(GetAsyncKeyState(VK_SPACE)&0x8000)!=0);});
         const auto config=aim_settings.load();
-        if(config&&(config->legit.enabled||config->legit.recoil_control||config->legit.trigger))phase(3,"aim planning",[&]{process_view(command,true);});
+        if(config&&config->active())phase(3,"aim planning",[&]{process_view(command,true);});
     }
     const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
     ++state->frames;state->combat_ms+=elapsed;state->combat_peak=std::max(state->combat_peak,elapsed);

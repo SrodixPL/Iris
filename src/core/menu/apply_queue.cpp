@@ -32,6 +32,38 @@ void selections(const std::vector<cosmetics::Selection>& before,const std::vecto
     std::erase_if(target,[&](const auto& entry){return slot_key(entry)==slot;});if(value)target.push_back(*value);
   }
 }
+void legit_fields(const combat::LegitSettings& b,const combat::LegitSettings& r,const combat::LegitSettings& a,combat::LegitSettings& t,bool publish) {
+  field(b.aim_key,r.aim_key,a.aim_key,t.aim_key,publish);
+  for(const auto& option:combat::legit_toggles)field(b.*option.member,r.*option.member,a.*option.member,t.*option.member,publish);
+  for(const auto& option:combat::legit_numbers)field(b.*option.member,r.*option.member,a.*option.member,t.*option.member,publish);
+  for(const auto& option:combat::legit_choices)field(b.*option.member,r.*option.member,a.*option.member,t.*option.member,publish);
+  for(std::size_t i=0;i<b.hitboxes.size();++i){field(b.hitboxes[i],r.hitboxes[i],a.hitboxes[i],t.hitboxes[i],publish);field(b.trigger_hitboxes[i],r.trigger_hitboxes[i],a.trigger_hitboxes[i],t.trigger_hitboxes[i],publish);field(b.multipoint[i],r.multipoint[i],a.multipoint[i],t.multipoint[i],publish);}
+}
+void legit_override_fields(const combat::LegitOverride& b,const combat::LegitOverride& r,const combat::LegitOverride& a,combat::LegitOverride& t,bool publish) {
+  field(b.enabled,r.enabled,a.enabled,t.enabled,publish);legit_fields(b.settings,r.settings,a.settings,t.settings,publish);
+}
+template<class T,class Key,class Merge> void identified_fields(const std::vector<T>& b,const std::vector<T>& r,const std::vector<T>& a,std::vector<T>& t,bool publish,Key key,Merge merge) {
+  using Id=decltype(key(std::declval<T>()));std::set<Id> ids;
+  for(const auto& item:b)ids.insert(key(item));for(const auto& item:r)ids.insert(key(item));
+  const auto lookup=[&](const std::vector<T>& items,Id id)->std::optional<T>{for(const auto& item:items)if(key(item)==id)return item;return {};};
+  for(Id id:ids){const auto old=lookup(b,id),next=lookup(r,id),accepted=lookup(a,id),current=lookup(t,id);if(old==next)continue;
+    if(old&&next&&accepted&&current){auto found=std::find_if(t.begin(),t.end(),[&](const auto& item){return key(item)==id;});merge(*old,*next,*accepted,*found,publish);}
+    else if(!publish||current==next){std::erase_if(t,[&](const auto& item){return key(item)==id;});const auto value=publish?accepted:next;if(value)t.push_back(*value);}
+  }
+}
+void legit_profiles_fields(const combat::Settings& b,const combat::Settings& r,const combat::Settings& a,combat::Settings& t,bool publish) {
+  field(b.master_enabled,r.master_enabled,a.master_enabled,t.master_enabled,publish);
+  field(b.selected_profile,r.selected_profile,a.selected_profile,t.selected_profile,publish);
+  field(b.next_profile_id,r.next_profile_id,a.next_profile_id,t.next_profile_id,publish);
+  identified_fields(b.profile_sets,r.profile_sets,a.profile_sets,t.profile_sets,publish,[](const auto& set){return set.id;},
+    [](const auto& old,const auto& next,const auto& accepted,auto& current,bool publishing){
+      field(old.name,next.name,accepted.name,current.name,publishing);legit_fields(old.global,next.global,accepted.global,current.global,publishing);
+      for(std::size_t i=0;i<old.categories.size();++i)legit_override_fields(old.categories[i],next.categories[i],accepted.categories[i],current.categories[i],publishing);
+      identified_fields(old.weapons,next.weapons,accepted.weapons,current.weapons,publishing,[](const auto& weapon){return weapon.definition;},
+        [](const auto& wb,const auto& wr,const auto& wa,auto& wt,bool p){legit_override_fields(wb.value,wr.value,wa.value,wt.value,p);});
+    });
+  if(!t.profile_sets.empty()&&std::none_of(t.profile_sets.begin(),t.profile_sets.end(),[&](const auto& set){return set.id==t.selected_profile;}))t.selected_profile=1;
+}
 void merge(const MenuState& before,const MenuState& requested,const MenuState& actual,MenuState& target,bool publish) {
   feature_switches::reconcile(before,requested,actual,target,publish);
   field(before.world.skybox_material,requested.world.skybox_material,actual.world.skybox_material,target.world.skybox_material,publish);
@@ -95,11 +127,13 @@ void merge(const MenuState& before,const MenuState& requested,const MenuState& a
   field(nb.silent_aim,nr.silent_aim,na.silent_aim,nt.silent_aim,publish);field(nb.remove_recoil,nr.remove_recoil,na.remove_recoil,nt.remove_recoil,publish);field(nb.multipoint,nr.multipoint,na.multipoint,nt.multipoint,publish);field(nb.multipoint_scale,nr.multipoint_scale,na.multipoint_scale,nt.multipoint_scale,publish);field(nb.quick_stop,nr.quick_stop,na.quick_stop,nt.quick_stop,publish);field(nb.quick_scope,nr.quick_scope,na.quick_scope,nt.quick_scope,publish);field(nb.delay_shot,nr.delay_shot,na.delay_shot,nt.delay_shot,publish);field(nb.health_damage,nr.health_damage,na.health_damage,nt.health_damage,publish);field(nb.shot_delay,nr.shot_delay,na.shot_delay,nt.shot_delay,publish);
   for(size_t i=0;i<nb.hitboxes.size();++i)field(nb.hitboxes[i],nr.hitboxes[i],na.hitboxes[i],nt.hitboxes[i],publish);
   const auto& ab=before.cosmetics.combat_settings;const auto& ar=requested.cosmetics.combat_settings;const auto& aa=actual.cosmetics.combat_settings;auto& at=target.cosmetics.combat_settings;
+  legit_profiles_fields(ab,ar,aa,at,publish);
   for(const auto& t:combat::legit_toggles)field(ab.legit.*t.member,ar.legit.*t.member,aa.legit.*t.member,at.legit.*t.member,publish);
   for(const auto& n:combat::legit_numbers)field(ab.legit.*n.member,ar.legit.*n.member,aa.legit.*n.member,at.legit.*n.member,publish);
-  for(size_t i=0;i<ab.legit.hitboxes.size();++i)field(ab.legit.hitboxes[i],ar.legit.hitboxes[i],aa.legit.hitboxes[i],at.legit.hitboxes[i],publish);
+  legit_fields(ab.legit,ar.legit,aa.legit,at.legit,publish);
   const auto& mb=before.cosmetics.movement_options;const auto& mr=requested.cosmetics.movement_options;const auto& ma=actual.cosmetics.movement_options;auto& mt=target.cosmetics.movement_options;
   for(const auto& n:movement::numbers)field(mb.*n.member,mr.*n.member,ma.*n.member,mt.*n.member,publish);
+  for(const auto& toggle:movement::toggles)field(mb.*toggle.member,mr.*toggle.member,ma.*toggle.member,mt.*toggle.member,publish);
   const auto& vb=before.cosmetics.player_visuals;const auto& vr=requested.cosmetics.player_visuals;const auto& va=actual.cosmetics.player_visuals;auto& vt=target.cosmetics.player_visuals;
   for(const auto& option:visuals::toggles)field(vb.*option.member,vr.*option.member,va.*option.member,vt.*option.member,publish);
   field(vb.box_style,vr.box_style,va.box_style,vt.box_style,publish);field(vb.max_distance,vr.max_distance,va.max_distance,vt.max_distance,publish);
@@ -107,13 +141,25 @@ void merge(const MenuState& before,const MenuState& requested,const MenuState& a
   field(vb.thickness,vr.thickness,va.thickness,vt.thickness,publish);field(vb.arrow_size,vr.arrow_size,va.arrow_size,vt.arrow_size,publish);
   for(std::size_t i=0;i<vb.flags.size();++i)field(vb.flags[i],vr.flags[i],va.flags[i],vt.flags[i],publish);
   for(const auto& color:visuals::colors)field(vb.*color.member,vr.*color.member,va.*color.member,vt.*color.member,publish);
+  field(vb.esp_layout,vr.esp_layout,va.esp_layout,vt.esp_layout,publish);
+  field(vb.separate_teammate_esp,vr.separate_teammate_esp,va.separate_teammate_esp,vt.separate_teammate_esp,publish);
+  for(const auto& option:visuals::esp_toggles)field(vb.teammate_esp.*option.target,vr.teammate_esp.*option.target,va.teammate_esp.*option.target,vt.teammate_esp.*option.target,publish);
+  for(std::size_t i=0;i<vb.teammate_esp.flags.size();++i)field(vb.teammate_esp.flags[i],vr.teammate_esp.flags[i],va.teammate_esp.flags[i],vt.teammate_esp.flags[i],publish);
+  field(vb.teammate_esp.layout,vr.teammate_esp.layout,va.teammate_esp.layout,vt.teammate_esp.layout,publish);
+  const auto& wb=before.cosmetics.world_esp;const auto& wr=requested.cosmetics.world_esp;const auto& wa=actual.cosmetics.world_esp;auto& wt=target.cosmetics.world_esp;
+  for(const auto& toggle:world::esp::toggles)field(wb.*toggle.member,wr.*toggle.member,wa.*toggle.member,wt.*toggle.member,publish);
+  for(const auto& color:world::esp::colors)field(wb.*color.member,wr.*color.member,wa.*color.member,wt.*color.member,publish);
+  field(before.cosmetics.music_kit,requested.cosmetics.music_kit,actual.cosmetics.music_kit,target.cosmetics.music_kit,publish);
+  field(before.cosmetics.scope_fov_override,requested.cosmetics.scope_fov_override,actual.cosmetics.scope_fov_override,target.cosmetics.scope_fov_override,publish);
+  field(before.cosmetics.scope_fov,requested.cosmetics.scope_fov,actual.cosmetics.scope_fov,target.cosmetics.scope_fov,publish);
+  field(before.cosmetics.thirdperson_distance,requested.cosmetics.thirdperson_distance,actual.cosmetics.thirdperson_distance,target.cosmetics.thirdperson_distance,publish);
   field(vb.box_opacity,vr.box_opacity,va.box_opacity,vt.box_opacity,publish);field(vb.chams_opacity,vr.chams_opacity,va.chams_opacity,vt.chams_opacity,publish);field(vb.chams_material,vr.chams_material,va.chams_material,vt.chams_material,publish);
   field(vb.box_max_distance,vr.box_max_distance,va.box_max_distance,vt.box_max_distance,publish);field(vb.chams_max_distance,vr.chams_max_distance,va.chams_max_distance,vt.chams_max_distance,publish);
   field(before.cosmetics.strafe_assist,requested.cosmetics.strafe_assist,actual.cosmetics.strafe_assist,target.cosmetics.strafe_assist,publish);
   field(before.cosmetics.auto_accept,requested.cosmetics.auto_accept,actual.cosmetics.auto_accept,target.cosmetics.auto_accept,publish);
   field(before.cosmetics.preserve_killfeed,requested.cosmetics.preserve_killfeed,actual.cosmetics.preserve_killfeed,target.cosmetics.preserve_killfeed,publish);
   const auto& hb=before.cosmetics.hud;const auto& hr=requested.cosmetics.hud;const auto& ha=actual.cosmetics.hud;auto& ht=target.cosmetics.hud;
-  field(hb.scope_lines,hr.scope_lines,ha.scope_lines,ht.scope_lines,publish);field(hb.inaccuracy_overlay,hr.inaccuracy_overlay,ha.inaccuracy_overlay,ht.inaccuracy_overlay,publish);field(hb.crosshair_mode,hr.crosshair_mode,ha.crosshair_mode,ht.crosshair_mode,publish);
+  field(hb.scope_hide,hr.scope_hide,ha.scope_hide,ht.scope_hide,publish);field(hb.scope_lines,hr.scope_lines,ha.scope_lines,ht.scope_lines,publish);field(hb.inaccuracy_overlay,hr.inaccuracy_overlay,ha.inaccuracy_overlay,ht.inaccuracy_overlay,publish);field(hb.crosshair_mode,hr.crosshair_mode,ha.crosshair_mode,ht.crosshair_mode,publish);
   field(hb.scope_gap,hr.scope_gap,ha.scope_gap,ht.scope_gap,publish);field(hb.scope_length,hr.scope_length,ha.scope_length,ht.scope_length,publish);field(hb.scope_thickness,hr.scope_thickness,ha.scope_thickness,ht.scope_thickness,publish);
   for(std::size_t i=0;i<hb.scope_color.size();++i){field(hb.scope_color[i],hr.scope_color[i],ha.scope_color[i],ht.scope_color[i],publish);field(hb.crosshair_color[i],hr.crosshair_color[i],ha.crosshair_color[i],ht.crosshair_color[i],publish);}
   field(before.cosmetics.strafe_strength,requested.cosmetics.strafe_strength,actual.cosmetics.strafe_strength,target.cosmetics.strafe_strength,publish);

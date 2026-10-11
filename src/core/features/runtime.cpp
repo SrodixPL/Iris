@@ -1,6 +1,7 @@
 #include "core/sdk/binding_values.hpp"
 #include "core/features/runtime.hpp"
 #include "core/features/world/native.hpp"
+#include "core/features/world/esp.hpp"
 #include "core/features/combat/nospread.hpp"
 #include "core/features/player/visuals.hpp"
 #include "core/features/player/visual_native.hpp"
@@ -17,7 +18,7 @@ void __fastcall scope_render(void* self,std::uint8_t* output) {
     std::lock_guard lock(state.mutex);
     const auto snapshot=nospread::hud_snapshot.load();
     DWORD foreground{};GetWindowThreadProcessId(GetForegroundWindow(),&foreground);
-    if(state.requested.hud.scope_lines&&!nospread::stopped&&foreground==GetCurrentProcessId()&&!renderer::menu_open()&&snapshot&&snapshot->scoped&&GetTickCount64()-snapshot->sampled<=150)output[4]=0;
+    if((state.requested.hud.scope_lines||state.requested.hud.scope_hide)&&!nospread::stopped&&foreground==GetCurrentProcessId()&&!renderer::menu_open()&&snapshot&&snapshot->scoped&&GetTickCount64()-snapshot->sampled<=150)output[4]=0;
 }
 Runtime& runtime() {
     std::call_once(runtime_once, [] { runtime_value = new Runtime; });
@@ -30,6 +31,9 @@ void recover(Runtime& state) {
     nospread::enabled=false;
     nospread::stopped=true;
     visuals::snapshot.store(nullptr);
+    world::esp::stop();
+    clear_world_visuals(state);
+    try {restore_music(state);}catch(const std::exception& error){overlay_log(error.what());}
     update_player_visuals(state);
     update_environment(state);
     update_native_variables(state);
@@ -83,6 +87,11 @@ void __fastcall frame_hook(void* self, int stage) {
     }catch(const std::exception& error){state.menu_model_tick=GetTickCount64()+10000;overlay_log(error.what());}
     if (stage != 6) return;
     if (!state.report.available) return;
+    if(GetTickCount64()>=state.world_visual_fault_at)try {
+        if(!guarded_world_visuals(&state))throw std::runtime_error("World visual reader raised an exception.");
+    }catch(const std::exception& error){clear_world_visuals(state);state.world_visual_fault_at=GetTickCount64()+10000;overlay_log(error.what());}
+    if(GetTickCount64()>=state.music_fault_at)try {update_music(state);}
+    catch(const std::exception& error){state.music_fault_at=GetTickCount64()+10000;overlay_log(error.what());}
     if(GetTickCount64()>=state.visual_fault_at)try {
         if(!guarded_player_visuals(&state))throw std::runtime_error("Player visual reader raised an exception.");
     }catch(const std::exception& error){visuals::snapshot.store(nullptr);visuals::native::stop();state.visual_fault_at=GetTickCount64()+10000;overlay_log(error.what());}
@@ -118,7 +127,7 @@ void __fastcall frame_hook(void* self, int stage) {
         state.report.detail = error.what();
         overlay_log(error.what());
         try {
-            if (!guarded_recover(&state) || !state.changed.empty() || state.glove || state.agent) {
+            if (!guarded_recover(&state) || !state.changed.empty() || state.glove || state.agent || state.music) {
                 state.report.detail += " Restoration was incomplete; restart the map.";
                 overlay_log("Cosmetic restoration was incomplete after a failed update.");
             }
@@ -140,6 +149,7 @@ void bind(Runtime& state) {
     const auto scope = reinterpret_cast<Scope>(method(schema,static_cast<int>(iris::sdk::binding_values::slots_schema_module_scope)))(reinterpret_cast<void*>(schema), "client.dll", nullptr);
     if (!scope) throw std::runtime_error("Client schema scope unavailable.");
     state.schema_scope = scope;
+    bind_music(state);
     auto& f = state.fields;
     f.pawn = active_pawn_field(scope);
     f.health = schema_field(scope, "C_BaseEntity", "m_iHealth");
@@ -278,7 +288,7 @@ void submit(const Configuration& configuration) {
     nospread::settings.store(std::make_shared<const nospread::Settings>(configuration.no_spread_settings));
     nospread::aim_settings.store(std::make_shared<const combat::Settings>(configuration.combat_settings));
     nospread::enabled=configuration.no_spread;
-    nospread::hud_enabled=configuration.hud.scope_lines||configuration.hud.inaccuracy_overlay||configuration.hud.crosshair_mode==1;
+    nospread::hud_enabled=configuration.hud.scope_lines||configuration.hud.scope_hide||configuration.hud.inaccuracy_overlay||configuration.hud.crosshair_mode==1;
     state.accept_enabled=configuration.auto_accept;state.killfeed_enabled=configuration.preserve_killfeed;
 }
 Status status() {
@@ -322,6 +332,7 @@ void stop() noexcept {
     nospread::stopped=true;
     visuals::snapshot.store(nullptr);
     world::stop();
+    world::esp::stop();
     visuals::native::stop();
     state.strafe_axis=0;
     state.viewmodel_override.store(nullptr);

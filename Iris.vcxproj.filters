@@ -132,6 +132,12 @@
     <ClInclude Include="src\core\features\inventory\inventory.hpp">
       <Filter>src\core\features\inventory</Filter>
     </ClInclude>
+    <ClCompile Include="src\core\features\inventory\music.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\music.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\features\inventory\patch.hpp">
       <Filter>src\core\features\inventory</Filter>
     </ClInclude>
@@ -184,6 +190,12 @@
       <Filter>src\core\features\player\esp</Filter>
     </ClCompile>
     <ClInclude Include="src\core\features\player\esp\drawing.hpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\player\esp\elements.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\esp\elements.hpp">
       <Filter>src\core\features\player\esp</Filter>
     </ClInclude>
     <ClCompile Include="src\core\features\player\esp\esp.cpp">
@@ -247,6 +259,15 @@
       <Filter>src\core\features\world</Filter>
     </ClCompile>
     <ClInclude Include="src\core\features\world\environment.hpp">
+      <Filter>src\core\features\world</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\world\esp.cpp">
+      <Filter>src\core\features\world</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\world\esp.hpp">
+      <Filter>src\core\features\world</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\features\world\esp_settings.hpp">
       <Filter>src\core\features\world</Filter>
     </ClInclude>
     <ClCompile Include="src\core\features\world\native.cpp">
@@ -330,6 +351,12 @@
     <ClCompile Include="src\core\menu\config_ui.cpp">
       <Filter>src\core\menu</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\menu\esp_preview.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\esp_preview.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
     <ClCompile Include="src\core\menu\feature_bindings.cpp">
       <Filter>src\core\menu</Filter>
     </ClCompile>
@@ -397,6 +424,12 @@
       <Filter>src\core\menu</Filter>
     </ClCompile>
     <ClInclude Include="src\core\menu\inventory_picker.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\legit_profiles.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\legit_profiles.hpp">
       <Filter>src\core\menu</Filter>
     </ClInclude>
     <ClInclude Include="src\core\menu\menu.hpp">
@@ -490,6 +523,9 @@
       <Filter>src\core\sdk\generated</Filter>
     </ClInclude>
     <ClInclude Include="src\core\sdk\generated\finish_colors.inc">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\sdk\generated\music_catalog.inc">
       <Filter>src\core\sdk\generated</Filter>
     </ClInclude>
     <ClInclude Include="src\core\sdk\generated\skin_catalog.inc">

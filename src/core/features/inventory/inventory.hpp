@@ -3,6 +3,7 @@
 #include "core/features/combat/settings.hpp"
 #include "core/features/combat/aim_settings.hpp"
 #include "core/features/player/visual_settings.hpp"
+#include "core/features/world/esp_settings.hpp"
 #include <array>
 #include <cstdint>
 #include <span>
@@ -20,6 +21,9 @@ struct Finish {
 struct Agent { int definition; const char* name; const char* model; unsigned teams; };
 std::span<const Agent> agents() noexcept;
 const Agent* find_agent(int definition) noexcept;
+struct MusicKit { int id; const char* name; const char* image; };
+std::span<const MusicKit> music_kits() noexcept;
+const MusicKit* find_music_kit(int id) noexcept;
 struct Environment {
     std::string skybox_material;
     bool world_override{}, lighting_override{}, bloom_override{}, dof_override{}, wetness_override{}, smoke_override{};
@@ -48,22 +52,25 @@ struct Selection {
 };
 inline constexpr std::array<const char*,2> crosshair_modes{"Default","While Scoped"};
 struct HudSettings {
-    bool scope_lines{},inaccuracy_overlay{};
+    bool scope_lines{},scope_hide{},inaccuracy_overlay{};
     int crosshair_mode{};
     float scope_gap{48},scope_length{70},scope_thickness{1.5f};
     std::array<float,4> scope_color{1,1,1,1},crosshair_color{1,1,1,1};
     bool operator==(const HudSettings&) const=default;
 };
 struct Configuration {
-    bool enabled{}, thirdperson{}, bhop{}, no_spread{};
+    bool enabled{true}, thirdperson{}, bhop{}, no_spread{};
     nospread::Settings no_spread_settings;
     combat::Settings combat_settings;
     visuals::Settings player_visuals;
+    world::esp::Settings world_esp;
     bool strafe_assist{}, auto_accept{}, preserve_killfeed{};
     float strafe_strength{.65f};
     movement::Options movement_options;
     HudSettings hud;
-    bool custom_fov{}, viewmodel_override{}, viewmodel_fov_override{true};
+    bool custom_fov{}, scope_fov_override{}, viewmodel_override{}, viewmodel_fov_override{};
+    float scope_fov{90};
+    float thirdperson_distance{120};
     float fov{90}, viewmodel_x{1}, viewmodel_y{1}, viewmodel_z{-1}, viewmodel_fov{60};
     std::array<std::string, 2> custom_models;
     std::uint64_t revision{};
@@ -71,6 +78,7 @@ struct Configuration {
     std::array<std::vector<Selection>, 2> loadouts;
     std::array<Selection, 2> gloves;
     std::array<int, 2> agents{};
+    int music_kit{};
     Configuration() { for (auto& glove : gloves) { glove.definition = 0; glove.enabled = false; } }
 };
 struct EquippedSlot { int slot{}, definition{}; bool operator==(const EquippedSlot&) const = default; };

@@ -1,5 +1,6 @@
 #pragma once
 #include "core/features/inventory/inventory.hpp"
+#include "core/features/inventory/music.hpp"
 #include "core/features/player/models.hpp"
 #include "core/features/player/sound_cue.hpp"
 #include "core/sdk/generated/client_bindings.hpp"
@@ -26,7 +27,7 @@
 #include "core/sdk/types.hpp"
 namespace iris::cosmetics::detail {
 using namespace iris::sdk;
-struct ViewmodelOverride { Address pawn{}; std::array<float,3> offsets{}; float fov{}; bool fov_override{true}; };
+struct ViewmodelOverride { Address pawn{}; std::array<float,3> offsets{}; float fov{}; bool fov_override{true}; bool offsets_override{true}; };
 struct HudKnife { int team{}; Address vdata{}; };
 struct SavedField { Address address; std::vector<std::byte> bytes; Address scene{}; };
 struct ChangedWeapon {
@@ -74,7 +75,7 @@ struct Runtime {
     ULONGLONG environment_scan{}, environment_tick{};
     EnvironmentEntity viewmodel_fields, camera_fields;
     std::map<std::uint32_t,visuals::SoundCue> player_sounds;
-    ULONGLONG visual_fault_at{};
+    ULONGLONG visual_fault_at{}, world_visual_fault_at{}, music_fault_at{};
     std::map<Address,EnvironmentEntity> native_variables;
     std::array<ULONGLONG,4> environment_fault_at{};
     std::uint32_t camera_pawn_handle{0xffffffff};
@@ -83,6 +84,7 @@ struct Runtime {
     EquippedLoadout roster;
     ULONGLONG next_roster_poll{};
     std::optional<ChangedWeapon> glove, agent;
+    std::optional<ChangedMusic> music;
     std::string agent_resource;
     std::map<std::uint32_t,ChangedWeapon> menu_players;
     std::map<std::uint32_t,Address> menu_preview_players;
@@ -116,6 +118,7 @@ struct Runtime {
     std::atomic<std::shared_ptr<const ViewmodelOverride>> viewmodel_override;
     CameraThink original_camera_think{};
     std::atomic<bool> camera_enabled{};
+    std::atomic<float> camera_distance{120};
     std::unique_ptr<hooks::Hook> paint_hook, seed_hook, wear_hook;
     std::unique_ptr<hooks::Hook> attributes_hook;
     IterateAttributes original_attributes{};

@@ -19,6 +19,8 @@ void publish_movement(Runtime& state) {
     movement::Settings settings;settings.keys=settings.smooth=f.strafe_assist;
     settings.strength=f.strafe_strength;settings.bhop=f.bhop;
     static_cast<movement::Options&>(settings.options)=f.movement_options;
+    settings.slow_walk=f.movement_options.slow_walk;
+    settings.quick_stop=f.movement_options.quick_stop;
     settings.rage_stop=nospread::rage_active()&&f.no_spread_settings.quick_stop;
     const auto published=nospread::movement_settings.load();
     if(state.stopping)nospread::movement_settings.store(nullptr);

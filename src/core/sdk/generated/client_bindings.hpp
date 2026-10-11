@@ -50,6 +50,7 @@ inline auto& viewmodel_x=iris::sdk::binding_values::client_viewmodel_x;
 inline auto& viewmodel_y=iris::sdk::binding_values::client_viewmodel_y;
 inline auto& viewmodel_z=iris::sdk::binding_values::client_viewmodel_z;
 inline auto& viewmodel_fov=iris::sdk::binding_values::client_viewmodel_fov;
+inline auto& camera_ideal_distance=iris::sdk::binding_values::client_camera_ideal_distance;
 inline auto& fog_override=iris::sdk::binding_values::client_fog_override;
 inline auto& fog_start=iris::sdk::binding_values::client_fog_start;
 inline auto& fog_end=iris::sdk::binding_values::client_fog_end;

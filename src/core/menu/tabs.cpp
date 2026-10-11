@@ -1,5 +1,6 @@
 #include "core/menu/tabs.hpp"
 #include "core/menu/feature_tree.hpp"
+#include "core/menu/legit_profiles.hpp"
 #include "core/features/combat/nospread.hpp"
 #include "core/features/world/skyboxes.hpp"
 #include "core/menu/widgets.hpp"
@@ -7,6 +8,7 @@
 #include "core/menu/config_io.hpp"
 #include "core/menu/settings_io.hpp"
 #include "core/menu/apply_queue.hpp"
+#include "core/menu/inventory_model.hpp"
 #include "core/menu/feature_bindings.hpp"
 #include <imgui_internal.h>
 #include <string_view>
@@ -66,8 +68,9 @@ void sync_item(InventoryCanvas& canvas,int side,int slot) {
     tile->name=slot==-3 ? "Agent" : slot==-2 ? "Gloves" : slot==-1 ? "Knife" : "Music Kit";
     for(const auto& weapon:weapons) if(weapon.definition==value.definition) tile->skin_name=value.paint ? tile->skin_name : weapon.name;
     if(slot==-3) for(const auto& agent:agents) if(agent.definition==value.definition) tile->skin_name=agent.name;
+    if(slot==-4)if(const auto* kit=cosmetics::find_music_kit(value.definition))tile->skin_name=kit->name;
   }
-  tile->art=canvas.adapter.resolve_art ? canvas.adapter.resolve_art(canvas.adapter.owner,tile->definition,tile->paint) : InventoryArt{};
+  tile->art=canvas.adapter.resolve_art ? canvas.adapter.resolve_art(canvas.adapter.owner,slot==-4?-4:tile->definition,slot==-4?value.definition:tile->paint) : InventoryArt{};
 }
 void sync_items(InventoryCanvas& canvas) {
   for(int side=0;side<2;++side) {
@@ -124,20 +127,20 @@ void inventory_picker(MenuRuntime& state) {
     canvas.detail_draft=actual;canvas.last_selection=actual;canvas.draft_team=side;canvas.draft_slot=slot;
   }
   auto& value=canvas.detail_draft;
-  const bool both_allowed=slot!=-3 && slot!=-4;
-  const bool available_apply=slot!=-4 && (canvas.adapter.apply || !canvas.adapter.game_roster);
+  const bool both_allowed=inventory_can_mirror(slot,value.definition ? value.definition : tile->definition);
+  const bool available_apply=tile->enabled && (canvas.adapter.apply || !canvas.adapter.game_roster);
   const auto apply=[&](const ItemDraft& next,bool mirror) {
     const bool accepted=submit_item(canvas,side,slot,next,mirror);
     value=applied_item(canvas,side,slot,*tile);canvas.last_selection=value; canvas.wear_editing=false;
     return accepted;
   };
-  const auto auto_apply=[&](const ItemDraft& next) { return apply(next,both_allowed && canvas.both_teams); };
+  const auto auto_apply=[&](const ItemDraft& next) { return apply(next,canvas.both_teams && inventory_can_mirror(slot,next.definition ? next.definition : tile->definition)); };
   canvas.preview_bounds={}; canvas.both_bounds={};
   if(canvas.observed_slot!=slot || canvas.observed_side!=side) {
     canvas.skin_search={}; canvas.rarity_filter=0; canvas.picker_context.clear();
     canvas.observed_slot=slot; canvas.observed_side=side;
     canvas.wear_editing=false;
-    canvas.panel_fraction=(slot==-3 ? value.definition!=0 : value.paint!=0) ? 1.f : 0.f;
+    canvas.panel_fraction=(slot==-3 ? value.definition!=0||!value.custom_model.empty() : slot==-4?value.definition!=0:value.paint!=0) ? 1.f : 0.f;
     canvas.observed_panel=canvas.panel_fraction>0; canvas.panel_target=canvas.panel_from=canvas.panel_fraction;
     canvas.panel_motion.progress=1;
   }
@@ -157,7 +160,7 @@ void inventory_picker(MenuRuntime& state) {
   ImGui::Dummy({button,button});
   auto* chip_draw=ImGui::GetWindowDrawList();
   chip_draw->AddRectFilled(chip,{chip.x+button,chip.y+button},ImGui::GetColorU32(theme::surface_tint(theme::raised,team,.22f)),theme::control_radius*s);
-  const auto chip_label=side ? "CT" : "T";
+  const auto chip_label=slot==-4?"ALL":side ? "CT" : "T";
   chip_draw->AddText({chip.x+(button-ImGui::CalcTextSize(chip_label).x)*.5f,widgets::text_y(chip.y,button)},ImGui::GetColorU32(theme::team_label(team)),chip_label);
   ImGui::PopStyleColor(2); ImGui::SameLine(0,theme::inventory_spacing*s);
   const char* category="Special Items";
@@ -167,8 +170,8 @@ void inventory_picker(MenuRuntime& state) {
   ImGui::PushFont(state.bold,theme::body_size); widgets::row_text(tile->name.c_str(),button); ImGui::PopFont();
   const auto navigate=[&](int direction) {
     std::array<int,20> slots{}; int count=0;
-    for(const auto& item:canvas.adapter.sides[side].special) if(!item.name.empty() && count<20) slots[count++]=item.slot;
-    for(const auto& column:canvas.adapter.sides[side].weapons) for(const auto& item:column) if(count<20) slots[count++]=item.slot;
+    for(const auto& item:canvas.adapter.sides[side].special) if(item.enabled && !item.name.empty() && count<20) slots[count++]=item.slot;
+    for(const auto& column:canvas.adapter.sides[side].weapons) for(const auto& item:column) if(item.enabled && count<20) slots[count++]=item.slot;
     int current=0; for(int i=0;i<count;++i) if(slots[i]==slot) current=i;
     if(!count) return;
     const int next=slots[(current+direction+count)%count];
@@ -188,8 +191,9 @@ void inventory_picker(MenuRuntime& state) {
   ImGui::SameLine(0,theme::inventory_tight_gap*s); if(inventory_icon_button("##slot_options",theme::inventory_more_icon,state.icons,button)) ImGui::OpenPopup("slot_options");
   if(canvas.request_options) { ImGui::OpenPopup("slot_options"); canvas.request_options=false; }
   const Bounds options{ImGui::GetItemRectMin(),ImGui::GetItemRectMax()}; canvas.options_bounds={options.min,options.max};
-  const char* labels[]{"Reset slot for this team","Copy slot to other team","Remove applied skin","Randomize seed"};
-  const char* hints[]{"Restore this slot's default item.","Copy the applied item to the other side.","Remove the applied finish.","Apply a different pattern seed."};
+  const bool mirrored=both_allowed && canvas.both_teams;
+  const char* labels[]{mirrored?"Reset slot for both teams":"Reset slot for this team","Copy slot to other team",mirrored?"Remove skin from both teams":"Remove applied skin","Randomize seed"};
+  const char* hints[]{mirrored?"Restore this slot on both teams.":"Restore this slot's default item.","Copy the applied item to the other side.",mirrored?"Remove the finish on both teams.":"Remove the applied finish.","Apply a different pattern seed."};
   float options_width=0;
   for(const auto* label:labels) options_width=std::max(options_width,ImGui::CalcTextSize(label).x/s);
   ImGui::PushFont(nullptr,theme::caption_size);
@@ -199,7 +203,7 @@ void inventory_picker(MenuRuntime& state) {
   const Bounds options_anchor{{options.max.x-options_width*s,options.min.y},options.max};
   if(panel_popup("slot_options",options_anchor,options_width,4*theme::inventory_action_row+2*theme::popup_padding)) {
     for(int action=0;action<4;++action) {
-      const bool unsupported=action<3 ? ((!canvas.adapter.slot_action || !canvas.adapter.read_selection) && canvas.adapter.game_roster) || slot==-4 || (slot==-3 && action==1) : !available_apply || slot==-3 || slot==-4;
+      const bool unsupported=action<3 ? ((!canvas.adapter.slot_action || !canvas.adapter.read_selection) && canvas.adapter.game_roster) || (!both_allowed && action==1) : !available_apply || slot==-3 || slot==-4;
       ImGui::BeginDisabled(unsupported);
       ImGui::PushID(action);
       if(widgets::popup_item(labels[action],false,false,hints[action])) {
@@ -207,12 +211,8 @@ void inventory_picker(MenuRuntime& state) {
         else if(canvas.adapter.slot_action && canvas.adapter.read_selection) {
           if(!canvas.adapter.slot_action(canvas.adapter.owner,side,slot,action)) canvas.error="Slot action failed.";
           else {
-            bool copied=action==1;
+            const bool copied=action==1 || (both_allowed && canvas.both_teams);
             canvas.error.clear();
-            if(action!=1 && both_allowed && canvas.both_teams) {
-              copied=canvas.adapter.slot_action(canvas.adapter.owner,1-side,slot,action);
-              if(!copied) canvas.error="Slot changed; could not copy it to the other team.";
-            }
             value=applied_item(canvas,side,slot,*tile); sync_item(canvas,side,slot); canvas.wear_editing=false;
             if(copied) if(const auto* other=entry(canvas,1-side,slot)) {
               applied_item(canvas,1-side,slot,*other); sync_item(canvas,1-side,slot);
@@ -234,7 +234,7 @@ void inventory_picker(MenuRuntime& state) {
   ImGui::GetWindowDrawList()->AddLine({origin.x,origin.y+theme::inventory_picker_header*s},{origin.x+region.x,origin.y+theme::inventory_picker_header*s},ImGui::GetColorU32(team));
   ImGui::Dummy({0,theme::inventory_picker_pad*s});
   if(!canvas.error.empty()) { ImGui::PushFont(nullptr,theme::caption_size); ImGui::TextColored(theme::destructive,"%s",canvas.error.c_str()); ImGui::PopFont(); }
-  const bool selected=slot==-3 ? value.definition!=0 : value.paint!=0;
+  const bool selected=slot==-3 ? value.definition!=0||!value.custom_model.empty() : slot==-4?value.definition!=0:value.paint!=0;
   if(selected!=canvas.observed_panel) {
     canvas.panel_from=canvas.panel_fraction; canvas.panel_target=selected ? 1.f : 0.f;
     canvas.panel_motion.start(state.settings.animations); canvas.observed_panel=selected;
@@ -317,7 +317,7 @@ void inventory_picker(MenuRuntime& state) {
         const auto card=ImGui::IsItemHovered() ? theme::control_hover : theme::section_surface;
         auto tint=chosen ? theme::surface_tint(card,team,theme::inventory_selected_tint) : card;
         draw->AddRectFilled(p,{p.x+size.x,p.y+size.y},ImGui::GetColorU32(tint),theme::inventory_card_radius*s);
-        const auto art=supported && definition>0 && canvas.adapter.resolve_art ? canvas.adapter.resolve_art(canvas.adapter.owner,definition,paint) : InventoryArt{};
+        const auto art=supported && definition>0 && canvas.adapter.resolve_art ? canvas.adapter.resolve_art(canvas.adapter.owner,grid_slot==-4?-4:definition,grid_slot==-4?definition:paint) : InventoryArt{};
         const float inset=theme::inventory_tile_inset*s;
         inventory::image_tile(art,{p.x+inset,p.y+inset},{size.x-2*inset,theme::inventory_skin_art*s},s);
         ImGui::PushFont(nullptr,theme::caption_size);
@@ -325,13 +325,13 @@ void inventory_picker(MenuRuntime& state) {
         inventory::rarity_edge(draw,p,{p.x+size.x,p.y+size.y},skin_color(definition,paint),s);
         ImGui::EndDisabled(); ImGui::PopID(); ImGui::PopID();
       };
-      choose(grid_slot==-3 ? 0 : grid_value.definition,0,"No skin / default");
+      choose(grid_slot==-3||grid_slot==-4 ? 0 : grid_value.definition,0,grid_slot==-4?"Default music kit":"No skin / default");
       int matches=0;
       if(grid_slot==-3) {
         std::set<std::string_view> models;
         for(const auto& agent:agents) if((agent.teams & (side ? 2 : 1)) && !std::string_view(agent.name).starts_with("Default ") && models.insert(agent.model).second && inventory::matches(agent.name,query)) { choose(agent.definition,0,agent.name); ++matches; }
         for(const auto& model:state.model_catalog.entries)if(inventory::matches(model.name.c_str(),query)){choose(0,0,model.name.c_str(),true,model.resource.c_str());++matches;}
-      } else if(grid_slot==-4) choose(0,-4,"Catalog unavailable",false);
+      } else if(grid_slot==-4) {for(const auto& kit:cosmetics::music_kits())if(inventory::matches(kit.name,query)){choose(kit.id,0,kit.name);++matches;}}
       else {
         bool catalog=false;
         for(const auto& f:finishes) if(f.definition==grid_value.definition) {
@@ -341,7 +341,7 @@ void inventory_picker(MenuRuntime& state) {
         if(!catalog && grid_value.definition!=31) choose(grid_value.definition,-1,"Finishes unavailable",false);
       }
       ImGui::EndTable();
-      if(!matches && grid_slot!=-4 && (query[0] || filter)) {
+      if(!matches && (query[0] || filter)) {
         const auto p=ImGui::GetCursorScreenPos(), size=ImGui::GetContentRegionAvail(); const auto text=ImGui::CalcTextSize("No matching items");
         ImGui::GetWindowDrawList()->AddText({p.x+(size.x-text.x)*.5f,p.y+size.y*.5f},ImGui::GetColorU32(theme::secondary),"No matching items");
       }
@@ -369,15 +369,16 @@ void inventory_picker(MenuRuntime& state) {
     auto preview_tint=theme::section_surface;
     draw->AddRectFilled(preview,{preview.x+width,preview.y+theme::inventory_preview_height*s},ImGui::GetColorU32(preview_tint),theme::inventory_card_radius*s);
     draw->AddRect(preview,{preview.x+width,preview.y+theme::inventory_preview_height*s},ImGui::GetColorU32(theme::border),theme::inventory_card_radius*s,ImDrawFlags_RoundCornersAll,theme::surface_border_width*s);
-    auto art=value.definition>0 && canvas.adapter.preview ? canvas.adapter.preview(canvas.adapter.owner,value.definition,value.paint) : InventoryArt{};
-    if(!art.texture.GetTexID() && value.definition>0 && canvas.adapter.resolve_art) art=canvas.adapter.resolve_art(canvas.adapter.owner,value.definition,value.paint);
+    auto art=slot!=-4&&value.definition>0 && canvas.adapter.preview ? canvas.adapter.preview(canvas.adapter.owner,value.definition,value.paint) : InventoryArt{};
+    if(!art.texture.GetTexID() && value.definition>0 && canvas.adapter.resolve_art) art=canvas.adapter.resolve_art(canvas.adapter.owner,slot==-4?-4:value.definition,slot==-4?value.definition:value.paint);
     const float preview_inset=theme::inventory_tile_inset*s;
     inventory::image_tile(art,{preview.x+preview_inset,preview.y+preview_inset},{width-2*preview_inset,theme::inventory_skin_art*s},s);
     const auto* f=finish(value.definition,value.paint);
     const char* preview_name=tile->name.c_str();
     for(const auto& weapon:weapons) if(weapon.definition==value.definition) preview_name=weapon.name;
     inventory::ellipsized_caption(preview_name,{preview.x+preview_inset,widgets::text_y(preview.y+theme::inventory_preview_title_y*s,(theme::inventory_preview_skin_y-theme::inventory_preview_title_y)*s)},{preview.x+width-preview_inset,preview.y+theme::inventory_preview_skin_y*s},ImGui::GetColorU32(theme::text));
-    const char* selection_name=f ? f->name : slot==-4 ? "Catalog unavailable" : "Default";
+    const char* selection_name=f ? f->name : "Default";
+    if(slot==-4)if(const auto* kit=cosmetics::find_music_kit(value.definition))selection_name=kit->name;
     if(slot==-3) { for(const auto& agent:agents) if(agent.definition==value.definition) selection_name=agent.name; if(!value.custom_model.empty())selection_name=value.custom_model.c_str(); }
     inventory::ellipsized_caption(selection_name,{preview.x+preview_inset,widgets::text_y(preview.y+theme::inventory_preview_skin_y*s,(theme::inventory_preview_height-theme::inventory_preview_skin_y)*s)},{preview.x+width-preview_inset,preview.y+theme::inventory_preview_height*s},ImGui::GetColorU32(theme::secondary));
     ImGui::Dummy({width,theme::inventory_preview_height*s}); canvas.preview_bounds={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
@@ -407,7 +408,7 @@ void inventory_picker(MenuRuntime& state) {
       if(inventory_icon_button("##random",theme::inventory_random_icon,state.icons,theme::input_height*s)) { auto next=value; random_seed(next); auto_apply(next); }
       remember("Randomize");
     }
-    if(slot!=-3 && slot!=-2) {
+    if(slot!=-3 && slot!=-2 && slot!=-4) {
       const auto binding=hotkeys::binding("Inventory/"+std::to_string(side)+"/"+std::to_string(slot)+"/StatTrak");
       if(widgets::toggle("stattrak","StatTrak",value.stattrak,slot==-4,nullptr,true,true,binding)) auto_apply(value);
       remember("StatTrak");
@@ -528,18 +529,16 @@ bool world_reset(MenuRuntime& state,const char* label) {
 void page_header(MenuRuntime& state) {
   const float s=state.scale;
   const float header_width=ImGui::GetContentRegionAvail().x;
-  ImGui::PushFont(state.bold,theme::heading_size);
-  const auto title_size=ImGui::CalcTextSize(page_names[static_cast<size_t>(state.selected)]);
   const bool inventory_header=state.selected==Page::Inventory;
   const float refresh_space=inventory_header ? (theme::inventory_icon_button+theme::inventory_tight_gap)*s : 0;
-  const float search_width=std::min(theme::search_width*s,std::max(80*s,header_width-title_size.x-theme::inventory_gap*s-refresh_space));
+  const float search_width=std::min(theme::search_width*s,std::max(80*s,header_width-theme::inventory_gap*s-refresh_space));
   const auto header_origin=ImGui::GetCursorScreenPos();
-  const float header_row=std::max(title_size.y,ImGui::GetFrameHeight());
-  ImGui::SetCursorScreenPos({header_origin.x,header_origin.y+(header_row-title_size.y)*.5f});
-  ImGui::TextUnformatted(page_names[static_cast<size_t>(state.selected)]);
-  state.title_bounds={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
-  ImGui::PopFont();
-  ImGui::SetCursorScreenPos({header_origin.x+header_width-search_width-refresh_space,header_origin.y+(header_row-ImGui::GetFrameHeight())*.5f});
+  const float header_row=theme::input_height*s;
+  ImGui::SetCursorScreenPos(header_origin);
+  state.title_bounds={};
+  if(state.selected==Page::Legit)legit_profiles::selector(state,210*s);
+  else if(state.selected==Page::Player)feature_tree::player_selector(state,210*s);
+  ImGui::SetCursorScreenPos({header_origin.x+header_width-search_width-refresh_space,header_origin.y});
   ImGui::SetNextItemWidth(search_width-(state.search[0] ? (theme::more_width+theme::inventory_inset)*s : 0));
   if(state.focus_search) { ImGui::SetKeyboardFocusHere(); state.focus_search=false; }
   const float field_padding=(theme::input_padding+16)*s;

@@ -1,6 +1,8 @@
 // Included inside the reviewed command adapter context.
 void reset_view() {
-    state->view_plan.reset();state->recoil={};state->locked_target=0;state->view_pawn=state->view_weapon=0;state->last_view={};state->shot_confirmation.reset();
+    legit_weapon_definition=0;
+    state->legit_decision.reset();
+    state->view_plan.reset();state->view_generation.reset();state->recoil={};state->locked_target=0;state->smooth_rates={};state->view_pawn=state->view_weapon=0;state->last_view={};state->shot_confirmation.reset();state->trigger_confirmation.reset();state->last_trigger={};
 }
 bool apply_view(Address proto,const ViewPlan& plan,Transaction* transient=nullptr) {
     if(stopped)return false;
@@ -11,7 +13,10 @@ bool apply_view(Address proto,const ViewPlan& plan,Transaction* transient=nullpt
     if(!controller||read_native<std::uint32_t>(controller+state->f.pawn)!=plan.pawn_handle||sdk::entity(state->client,plan.pawn_handle)!=plan.pawn||read_native<int>(plan.pawn+state->f.health)<=0)return false;
     const auto services=read_native<Address>(plan.pawn+state->f.services);
     if(!services||read_native<std::uint32_t>(services+state->f.active)!=plan.weapon_handle||sdk::entity(state->client,plan.weapon_handle)!=plan.weapon)return false;
-    if(plan.target){const auto target=sdk::entity(state->client,plan.target);
+    if(plan.target){
+        const auto definition=read_native<std::int16_t>(plan.weapon+state->f.definition);const auto ls=plan.config.resolve(definition);
+        if(ls.aim_key&&!(GetAsyncKeyState(ls.aim_key)&0x8000))return false;
+        const auto target=sdk::entity(state->client,plan.target);
         if(!target||read_native<int>(target+state->f.health)<=0||read_native<bool>(target+state->f.immune)||read_native<std::uint8_t>(target+state->f.team)==read_native<std::uint8_t>(plan.pawn+state->f.team)||!visible(plan.pawn,target,position(plan.pawn),plan.point))return false;
     }
     const auto history=read_native<Repeated>(proto+binding_values::layout_proto_history);
@@ -40,7 +45,9 @@ void firing_intent(Address command,const Command& cmd,const Base& base,bool fire
     checksum(cmd.base,base,buttons,read_native<Angles>(base.angles),tx);tx.committed=true;
 }
 void process_view(Address command,bool camera_frame=true) {
-    const auto snapshot=aim_settings.load();if(!snapshot)return;const auto config=*snapshot;
+    const auto snapshot=aim_settings.load();if(!snapshot)return;const auto& config=*snapshot;
+    // Profile edits must start fresh acquisition, recoil and confirmation timing.
+    if(state->view_generation&&state->view_generation!=snapshot)reset_view();
     const auto& f=state->f;const auto controller=read_native<Address>(state->client+cosmetics::bindings::local_controller);
     const auto pawn_handle=controller?read_native<std::uint32_t>(controller+f.pawn):0xffffffff;
     const auto pawn=controller?sdk::entity(state->client,pawn_handle):0;
@@ -60,14 +67,20 @@ void process_view(Address command,bool camera_frame=true) {
     }
     if(state->plan && rage_active() && state->plan->seed==base.random_seed && state->plan->tick==base.tick){reset_view();legit_status="Rage takes priority";return;}
     const auto services=read_native<Address>(pawn+f.services);const auto weapon_handle=services?read_native<std::uint32_t>(services+f.active):0xffffffff;const auto weapon=services?sdk::entity(state->client,weapon_handle):0;
-    const bool loaded=firearm(weapon) && read_native<int>(weapon+f.clip)>0 && !read_native<bool>(weapon+f.reload);
+    const auto vdata=weapon?read_native<Address>(weapon+binding_values::layout_weapon_vdata):0;
+    const int pellets=vdata?read_native<int>(vdata+f.bullets):0;
+    const bool loaded=vdata&&combat::legit_weapon(read_native<std::uint16_t>(weapon+f.definition))&&pellets>0&&pellets<=32&&read_native<int>(weapon+f.clip)>0&&!read_native<bool>(weapon+f.reload);
     if(!loaded){reset_view();legit_status="Waiting for a loaded firearm";return;}
     const auto input=read_native<Address>(state->client+cosmetics::bindings::input);if(!input)return;
     const auto look=camera_angles(input);if(!finite(look))return;
     const auto now=std::chrono::steady_clock::now();
     if(state->view_pawn!=pawn || state->view_weapon!=weapon || state->view_pawn_handle!=pawn_handle || state->view_weapon_handle!=weapon_handle || (state->last_view.time_since_epoch().count() && now-state->last_view>std::chrono::milliseconds(250)))reset_view();
+    const std::array<std::int64_t,5> decision{cmd.number,base.random_seed,base.tick,pawn_handle,weapon_handle};
+    if(state->legit_decision&&*state->legit_decision==decision)return;
+    state->legit_decision=decision;
     const float dt=state->last_view.time_since_epoch().count()?std::chrono::duration<float>(now-state->last_view).count():0;
     state->last_view=now;state->view_pawn=pawn;state->view_weapon=weapon;state->view_pawn_handle=pawn_handle;state->view_weapon_handle=weapon_handle;state->view_plan.reset();
+    state->view_generation=snapshot;
     const auto buttons=read_native<Buttons>(base.buttons).value|cmd.value;
     bool firing=(buttons&attack)!=0 || ((cmd.has&0x20) && cmd.attack_history>=0 && cmd.attack_history<cmd.history.size),using_item=(buttons&((1ull<<5)|(1ull<<11)))!=0;
     for(int i=0;i<base.moves.size;++i) {
@@ -76,9 +89,13 @@ void process_view(Address command,bool camera_frame=true) {
         if(step.pressed && (step.button&attack))firing=true;
         if(step.pressed && (step.button&((1ull<<5)|(1ull<<11))))using_item=true;
     }
-    const auto& ls=config.legit;Vector sent=look,point{};std::uint32_t handle{};
+    Vector sent=look,point{};std::uint32_t handle{};
     bool assisted=false;
     const auto definition=loaded?read_native<std::int16_t>(weapon+f.definition):0;
+    legit_weapon_definition=definition;
+    const auto ls=config.resolve(definition);
+    const bool aim_key_held=ls.aim_key==0||(GetAsyncKeyState(ls.aim_key)&0x8000)!=0;
+    const bool aim_enabled=ls.enabled&&aim_key_held;
     const bool sniper=definition==9 || definition==11 || definition==38 || definition==40;
     const bool blocked=(ls.pause_flashed && read_native<float>(pawn+f.flash)>0) || (sniper && ls.scoped_only && !read_native<bool>(pawn+f.scoped));
     const bool legit_active=loaded && camera_frame && !rage_active() && !using_item && !blocked && (ls.enabled||ls.recoil_control||ls.trigger);
@@ -86,57 +103,132 @@ void process_view(Address command,bool camera_frame=true) {
         const auto punch=aim_punch(pawn);
         const Vector recoil_punch{punch.x*ls.recoil_vertical,punch.y*ls.recoil_horizontal,0};
         sent=state->recoil.update(look,recoil_punch,firing && ls.recoil_control && ls.standalone_recoil,ls.recoil_strength);
-        if(ls.enabled && (!ls.on_fire || firing)) {
-            const auto eye=position(pawn);const auto team=read_native<std::uint8_t>(pawn+f.team);float nearest=181;bool locked=false;
+        if(aim_enabled && (!ls.on_fire || firing)) {
+            const auto eye=position(pawn);const auto team=read_native<std::uint8_t>(pawn+f.team);float nearest=181;bool locked=false;int preference=-1;float best_score=-1;
+            struct Candidate {std::uint32_t handle{};Address entity{};Vector point{};float angle{};int rank{};bool locked{};};
+            std::vector<Candidate> chance_candidates;
+            combat::QueryBudget visibility_budget(256);
             for(int i=1;i<=64;++i) {
                 const auto other=controller_at(i);
                 if(!other || other==controller || read_native<bool>(other+f.hltv))continue;
                 const auto candidate_handle=read_native<std::uint32_t>(other+f.player_pawn);const auto candidate=sdk::entity(state->client,candidate_handle);
                 if(!candidate || candidate==pawn || read_native<int>(candidate+f.health)<=0 || read_native<bool>(candidate+f.immune) || read_native<std::uint8_t>(candidate+f.team)==team)continue;
                 const auto scene=read_native<Address>(candidate+f.scene);if(!scene || read_native<bool>(scene+f.dormant))continue;
-                for(const auto& hitbox:hitbox_points(scene))if(ls.hitboxes[hitbox.region]) {
-                    if(!within_fov(look,eye,hitbox.point,ls.fov))continue;
+                for(const auto& hitbox:hitbox_points(scene,std::any_of(ls.multipoint.begin(),ls.multipoint.end(),[](bool value){return value;}),.5f,true))if(ls.hitboxes[hitbox.region]) {
+                    if(hitbox.secondary&&!ls.multipoint[hitbox.region])continue;
+                    if(ls.only_body&&(hitbox.region==0||hitbox.region>=4))continue;
+                    if(angular_distance(bullet(look,{}),hitbox.point-eye)>ls.effective_fov(camera_fov)*.5f)continue;
                     const bool preferred=ls.target_lock && candidate_handle==state->locked_target;
+                    // When both preferences are selected, both preferred regions
+                    // compete by crosshair distance. Body-only remains a filter.
+                    const int rank=(ls.prefer_head&&hitbox.region==0)||(ls.prefer_body&&hitbox.region>=1&&hitbox.region<=3)?1:0;
                     const auto distance=angular_distance(bullet(look,{}),hitbox.point-eye);
-                    if((locked && !preferred) || (preferred==locked && distance>=nearest))continue;
-                    if(!visible(pawn,candidate,eye,hitbox.point))continue;
-                    locked=preferred;nearest=distance;handle=candidate_handle;point=hitbox.point;
+                    float score=0;
+                    if(ls.target_selection==1){if(!visibility_budget.take())continue;score=shot_damage(pawn,weapon,candidate,eye,hitbox.point,hitbox.region,false);if(score<=0)continue;}
+                    if(ls.target_selection!=0&&((locked&&!preferred)||(preferred==locked&&(rank<preference||(rank==preference&&(ls.target_selection==1?(score<best_score||(score==best_score&&distance>=nearest)):distance>=nearest))))))continue;
+                    if(ls.target_selection!=1){if(!visibility_budget.take())continue;if(!visible(pawn,candidate,eye,hitbox.point))continue;}
+                    if(ls.target_selection==0){
+                        auto found=std::find_if(chance_candidates.begin(),chance_candidates.end(),[&](const auto& value){return value.handle==candidate_handle;});
+                        if(found==chance_candidates.end())chance_candidates.push_back({candidate_handle,candidate,hitbox.point,distance,rank,preferred});
+                        else if(rank>found->rank||(rank==found->rank&&distance<found->angle))*found={candidate_handle,candidate,hitbox.point,distance,rank,preferred};
+                    }else{locked=preferred;preference=rank;best_score=score;nearest=distance;handle=candidate_handle;point=hitbox.point;}
                 }
             }
-            if(handle && handle!=state->locked_target){state->locked_target=handle;state->acquired=now;}
-            if(handle && std::chrono::duration<float,std::milli>(now-state->acquired).count()>=ls.reaction_time) {
+            if(ls.target_selection==0&&!chance_candidates.empty()){
+                // Reuse the reviewed spread function with deterministic sample
+                // identities. This is a bounded estimate, not server acceptance.
+                std::sort(chance_candidates.begin(),chance_candidates.end(),[](const auto& a,const auto& b){if(a.locked!=b.locked)return a.locked>b.locked;if(a.rank!=b.rank)return a.rank>b.rank;return a.angle<b.angle;});
+                if(chance_candidates.size()>4)chance_candidates.resize(4);
+                using Inaccuracy=float(__fastcall*)(Address,float*,float*);using BaseSpread=float(__fastcall*)(Address);
+                using Spread=void(__fastcall*)(std::int16_t,int,int,std::uint32_t,float,float,float,float*,float*);
+                state->native_stage="Legit selection accuracy";
+                const float accuracy=reinterpret_cast<Inaccuracy>(state->client+inaccuracy_rva)(weapon,nullptr,nullptr),spread=reinterpret_cast<BaseSpread>(state->client+base_spread_rva)(weapon),recoil=read_native<float>(weapon+f.recoil);
+                const float range=read_native<float>(vdata+f.range);
+                if(std::isfinite(accuracy)&&accuracy>=0&&std::isfinite(spread)&&spread>=0&&std::isfinite(recoil)&&std::isfinite(range)&&range>0){
+                    for(const auto& candidate:chance_candidates){
+                        if((locked&&!candidate.locked)||(candidate.locked==locked&&candidate.rank<preference))continue;
+                        const auto desired=aim(eye,candidate.point);if(!desired)continue;int hits=0;
+                        state->native_stage="Legit selection spread";
+                        for(std::uint32_t sample=1;sample<=32;++sample){Vector offset{};reinterpret_cast<Spread>(state->client+spread_rva)(static_cast<std::int16_t>(definition),1,0,sample,accuracy,spread,recoil,&offset.x,&offset.y);
+                            const auto direction=bullet(*desired,offset);TraceResult result;if(finite(direction)&&trace_ray(pawn,eye,eye+direction*(range*.999f),result)&&result.entity==candidate.entity)++hits;
+                        }
+                        const float score=static_cast<float>(hits);
+                        if(candidate.locked!=locked||candidate.rank>preference||score>best_score||(score==best_score&&candidate.angle<nearest)){locked=candidate.locked;preference=candidate.rank;best_score=score;nearest=candidate.angle;handle=candidate.handle;point=candidate.point;}
+                    }
+                }
+            }
+            const bool acquired=handle&&handle!=state->locked_target;
+            if(acquired){state->locked_target=handle;state->acquired=now;state->smooth_rates={};}
+            const auto elapsed=std::chrono::duration<float,std::milli>(now-state->acquired).count();
+            if(handle && elapsed>=ls.reaction_time&&(ls.aim_time==0||elapsed-ls.reaction_time<ls.aim_time)) {
                 if(const auto desired=aim(eye,point)) {
                     const auto goal=ls.recoil_control?*desired-recoil_punch*ls.recoil_strength:*desired;
-                    sent=combat::smooth(sent,goal,dt,ls.smoothing,ls.max_speed);assisted=true;legit_status="Aim assistance active";
+                    if(dt>0&&std::isfinite(dt)){
+                        const float step_time=std::min(dt,.05f);const Vector delta{goal.x-sent.x,std::remainder(goal.y-sent.y,360.f),0};
+                        Vector step{};
+                        if(ls.smoothing_type==0){
+                            if(state->smooth_rates.x==0&&state->smooth_rates.y==0)state->smooth_rates={std::max(1.f,std::abs(delta.x)/ls.smoothing),std::max(1.f,std::abs(delta.y)/ls.smoothing),0};
+                            step={std::copysign(std::min(std::abs(delta.x),state->smooth_rates.x*step_time*ls.smooth_pitch*.01f),delta.x),std::copysign(std::min(std::abs(delta.y),state->smooth_rates.y*step_time*ls.smooth_yaw*.01f),delta.y),0};
+                        }else step={delta.x*(-std::expm1(-step_time*ls.smooth_pitch*.01f/ls.smoothing)),delta.y*(-std::expm1(-step_time*ls.smooth_yaw*.01f/ls.smoothing)),0};
+                        const float magnitude=std::hypot(step.x,step.y),limit=ls.max_speed*step_time;if(magnitude>limit)step=step*(limit/magnitude);
+                        sent=combat::clamp_angles(sent+step);assisted=true;legit_status="Aim assistance active";
+                    }
                 }
-            } else {legit_status=handle?"Waiting for target delay":"No visible target inside FOV";handle=0;}
+            } else {legit_status=handle?(elapsed<ls.reaction_time?"Waiting for target delay":"Target assistance duration reached"):"No visible target inside FOV";handle=0;}
             if(!handle && !state->locked_target)state->acquired={};
             if(!handle && nearest==181)state->locked_target=0;
-        } else {state->locked_target=0;legit_status=ls.enabled?"Waiting for fire":"Recoil control only";}
+        } else {state->locked_target=0;legit_status=ls.enabled?(aim_key_held?"Waiting for fire":"Waiting for aim key"):"Recoil control only";}
     } else {state->recoil={};state->locked_target=0;legit_status=rage_active()?"Rage takes priority":"Disabled";}
     if(camera_frame && !rage_active() && loaded && !using_item) {
         const bool wants=firing || ls.trigger;
-        std::uint32_t confirmed{};
-        if(wants && !blocked && (ls.enabled || ls.trigger)){
+        std::uint32_t confirmed{},trigger_confirmed{};
+        if(wants && !blocked && aim_enabled){
             const auto eye=position(pawn);const auto punch=aim_punch(pawn);TraceResult result;
-            if(trace_ray(pawn,eye,eye+bullet(sent,punch)*8192.f,result) && result.entity){
+            if(trace_ray(pawn,eye,eye+bullet(sent+Vector{punch.x,punch.y,0},{})*8192.f,result) && result.entity){
                 for(int i=1;i<=64;++i){const auto other=controller_at(i);if(!other || other==controller || read_native<bool>(other+f.hltv))continue;
                     const auto candidate=read_native<std::uint32_t>(other+f.player_pawn);
                     if(sdk::entity(state->client,candidate)!=result.entity)continue;
-                    if(read_native<int>(result.entity+f.health)>0 && !read_native<bool>(result.entity+f.immune) && read_native<std::uint8_t>(result.entity+f.team)!=read_native<std::uint8_t>(pawn+f.team))confirmed=candidate;
+                    if(read_native<int>(result.entity+f.health)>0 && !read_native<bool>(result.entity+f.immune) && read_native<std::uint8_t>(result.entity+f.team)!=read_native<std::uint8_t>(pawn+f.team)){
+                        confirmed=candidate;
+                    }
                     break;
                 }
             }
         }
-        const float delay=sniper?std::max(ls.shot_delay,ls.sniper_delay):ls.shot_delay;
+        const float delay=ls.confirmation_delay?(sniper?std::max(ls.shot_delay,ls.sniper_delay):ls.shot_delay):0.f;
         const bool ready=state->shot_confirmation.ready(confirmed,std::chrono::duration<double,std::milli>(now.time_since_epoch()).count(),delay);
-        const bool gated=(ls.enabled && firing && (delay>0 || blocked)) || ls.trigger;
-        if(gated && cmd.history.size>0){
-            if(!ready && firing){firing_intent(command,cmd,base,false);firing=false;legit_status=blocked?"Assistance paused":"Waiting for shot confirmation";}
-            else if(ready && !firing && ls.trigger){
+        const bool trigger_blocked=(sniper&&ls.scoped_only&&!read_native<bool>(pawn+f.scoped))||(ls.trigger_flash&&read_native<float>(pawn+f.flash)>0)||(ls.trigger_air&&!(read_native<std::uint32_t>(pawn+f.flags)&1));
+        if(ls.trigger&&!trigger_blocked&&pellets==1&&cmd.history.size>0){
+            const auto eye=position(pawn),punch=aim_punch(pawn);const auto data=read_native<Address>(weapon+binding_values::layout_weapon_vdata);
+            const float range=data?read_native<float>(data+f.range):0.f;int region=-1;Address entity{};
+            const auto history=read_native<History>(read_native<Address>(cmd.history.rep+8+8*(cmd.history.size-1)));
+            if(std::isfinite(range)&&range>0&&history.header.vtable==state->client+reviewed::history_vtable&&(history.has&0x800)&&history.player_tick>0&&std::isfinite(history.player_fraction)&&history.player_fraction>=0&&history.player_fraction<1){
+                using Inaccuracy=float(__fastcall*)(Address,float*,float*);using BaseSpread=float(__fastcall*)(Address);
+                using Seed=std::uint32_t(__fastcall*)(Address,const Vector*,int);
+                using Spread=void(__fastcall*)(std::int16_t,int,int,std::uint32_t,float,float,float,float*,float*);
+                state->native_stage="Legit trigger accuracy";
+                const float accuracy=reinterpret_cast<Inaccuracy>(state->client+inaccuracy_rva)(weapon,nullptr,nullptr),spread=reinterpret_cast<BaseSpread>(state->client+base_spread_rva)(weapon),recoil=read_native<float>(weapon+f.recoil);
+                Vector direction{};
+                if(std::isfinite(accuracy)&&accuracy>=0&&std::isfinite(spread)&&spread>=0&&std::isfinite(recoil)){
+                    state->native_stage="Legit trigger spread";const auto seed=reinterpret_cast<Seed>(state->client+seed_rva)(0,&sent,history.player_tick);Vector offset{};
+                    reinterpret_cast<Spread>(state->client+spread_rva)(static_cast<std::int16_t>(definition),1,0,seed+1,accuracy,spread,recoil,&offset.x,&offset.y);
+                    direction=bullet(sent+Vector{punch.x,punch.y,0},offset);
+                }
+                const auto damage=finite(direction)&&length(direction)>.5f?shot_damage(pawn,weapon,0,eye,eye+direction*(range*.999f),-1,ls.trigger_visibility==1,&region,&entity):0.f;
+                if(damage>0&&damage>=ls.trigger_minimum_damage&&region>=0&&region<static_cast<int>(ls.trigger_hitboxes.size())&&ls.trigger_hitboxes[region]){
+                    for(int i=1;i<=64;++i){const auto other=controller_at(i);if(!other)continue;const auto candidate=read_native<std::uint32_t>(other+f.player_pawn);if(sdk::entity(state->client,candidate)==entity){trigger_confirmed=candidate;break;}}
+                }
+            }
+        }
+        if(ls.trigger&&pellets!=1)legit_status="Shotgun Trigger unavailable";
+        const bool trigger_ready=state->trigger_confirmation.ready(trigger_blocked?0:trigger_confirmed,std::chrono::duration<double,std::milli>(now.time_since_epoch()).count(),ls.trigger_reaction+delay);
+        const bool interval_ready=!state->last_trigger.time_since_epoch().count()||std::chrono::duration<float,std::milli>(now-state->last_trigger).count()>=ls.trigger_interval;
+        if(cmd.history.size>0){
+            if(aim_enabled&&firing&&(delay>0||blocked)&&!ready){firing_intent(command,cmd,base,false);firing=false;legit_status=blocked?"Assistance paused":"Waiting for shot confirmation";}
+            else if(trigger_ready&&interval_ready&&!firing&&ls.trigger){
                 const auto history=read_native<History>(read_native<Address>(cmd.history.rep+8+8*(cmd.history.size-1)));
                 const int next=read_native<int>(weapon+f.next);const float fraction=read_native<float>(weapon+f.ratio);
-                if(history.player_tick>next || (history.player_tick==next && history.player_fraction>=fraction)){firing_intent(command,cmd,base,true);firing=true;}
+                if(history.header.vtable==state->client+reviewed::history_vtable&&std::isfinite(history.player_fraction)&&history.player_fraction>=0&&history.player_fraction<1&&std::isfinite(fraction)&&fraction>=0&&fraction<1&&(history.player_tick>next||(history.player_tick==next&&history.player_fraction>=fraction))){firing_intent(command,cmd,base,true);firing=true;state->last_trigger=now;}
             }
         }
     }

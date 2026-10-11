@@ -16,7 +16,7 @@ void update_skyboxes(Runtime& state,EnvironmentEntity& saved) {
     };
 
             const auto skybox=std::clamp(settings.skybox,0,static_cast<int>(skyboxes.size())-1);
-            if(!settings.sky && !skybox && settings.skybox_material.empty() && settings.sky_brightness==1 && !settings.remove_sky){restore_environment_entity(saved);return;}
+            if(!settings.sky && !skybox && settings.skybox_material.empty() && !settings.remove_sky){restore_environment_entity(saved);return;}
             const int material=offset("C_EnvSky","m_hSkyMaterial");
             if(skybox || !settings.skybox_material.empty()){
                 const auto path=settings.skybox_material.empty() ? skyboxes[skybox].material : settings.skybox_material.c_str();
@@ -29,7 +29,7 @@ void update_skyboxes(Runtime& state,EnvironmentEntity& saved) {
             if(settings.sky){environment_write(saved,tint,color(settings.sky_color));environment_write(saved,lighting_tint,color(settings.sky_color));}
             else {restore_environment_field(saved,tint);restore_environment_field(saved,lighting_tint);}
             const int brightness=offset("C_EnvSky","m_flBrightnessScale");
-            if(brightness>=0 && settings.sky_brightness!=1){
+            if(settings.sky && brightness>=0 && settings.sky_brightness!=1){
                 float baseline=get<float>(saved.address+brightness);
                 const auto found=saved.fields.find(brightness);
                 if(found!=saved.fields.end() && found->second.written.size()==sizeof(float)){
