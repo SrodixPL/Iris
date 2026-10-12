@@ -16,6 +16,7 @@ struct InventoryArt {
   ImTextureRef texture{};
   ImVec2 uv0{}, uv1{1,1};
   float aspect{1};
+  bool interactive{};
 };
 struct InventoryEntry {
   int slot{}, definition{}, paint{};
@@ -86,6 +87,11 @@ struct InventoryCanvas {
   std::array<std::array<ImVec2,2>,4> action_bounds{};
   std::array<ImVec2,2> picker_back{};
   std::array<ImVec2,2> preview_bounds{};
+  std::array<float,3> preview_pose{};
+  int preview_definition{};
+  bool preview_dragged{};
+  double preview_click_time{-1};
+  ImVec2 preview_click_position{};
   std::string picker_context;
 
   InventoryCanvas() = default;
@@ -117,9 +123,9 @@ inline void image_box(const InventoryArt& art,ImVec2 p,ImVec2 size,float fractio
   draw->AddLine({center.x-half*.1f,center.y-half*.1f},{center.x+half*.65f,center.y+half*.45f},color,theme::inventory_placeholder_stroke*s);
   draw->AddCircleFilled({center.x+half*.4f,center.y-half*.4f},theme::inventory_placeholder_stroke*s,color);
 }
-inline void image_tile(const InventoryArt& art,ImVec2 p,ImVec2 size,float s) {
+inline void image_tile(const InventoryArt& art,ImVec2 p,ImVec2 size,float s,float fraction=theme::inventory_tile_art_fraction) {
   ImGui::GetWindowDrawList()->AddRectFilled(p,{p.x+size.x,p.y+size.y},ImGui::GetColorU32(theme::inventory_tile_surface),theme::inventory_tile_radius*s);
-  image_box(art,p,size,theme::inventory_tile_art_fraction,s);
+  image_box(art,p,size,fraction,s);
 }
 inline void caption(const char* label,ImVec2 p,ImVec2 end,ImU32 color) {
   auto* draw=ImGui::GetWindowDrawList();

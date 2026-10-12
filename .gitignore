@@ -435,3 +435,8 @@ FodyWeavers.xsd
 /assets/
 bindings.json
 cs2-dumper.log
+# Large pinned SafetyHook decoder files are kept locally, not in Git.
+/src/ext/safetyhook/Zydis.c
+/src/ext/safetyhook/Zydis.h
+# Keep workspace-specific agent instructions local until they are ready to publish.
+/AGENTS.md

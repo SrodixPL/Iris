@@ -1,10 +1,9 @@
 #pragma once
-#include <MinHook.h>
 #include <memory>
 
 namespace iris::hooks {
 struct State;
-// Lifecycle calls must be serialized; instances share one linked MinHook copy.
+// Runtimes share a serialized target registry; hooks retain their runtime state.
 class Runtime {
 public:
     Runtime();
@@ -14,6 +13,7 @@ private:
 };
 class Hook {
 public:
+    // Creates a disabled hook. Publish original() before calling enable().
     Hook(const Runtime& runtime, void* target, void* detour);
     ~Hook();
     Hook(const Hook&) = delete;
@@ -26,9 +26,9 @@ public:
         return reinterpret_cast<Function>(original_);
     }
 private:
-    std::shared_ptr<State> state_;
-    void* target_{};
+    // Keep SafetyHook's C++23 types out of the C++20 feature headers.
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
     void* original_{};
-    bool enabled_{};
 };
 }

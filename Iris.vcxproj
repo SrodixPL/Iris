@@ -55,18 +55,19 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir);$(ProjectDir)src\ext\imgui;$(ProjectDir)src\ext\imgui\backends;$(ProjectDir)src\ext\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir);$(ProjectDir)src\ext\imgui;$(ProjectDir)src\ext\imgui\backends;$(ProjectDir)src\ext\safetyhook;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>IRIS_DEBUG;_DEBUG;INVENTORY_UI;WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 /Zc:threadSafeInit- /MP4 %(AdditionalOptions)</AdditionalOptions>
       <ExceptionHandling>Sync</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <Optimization>Disabled</Optimization>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;d3dcompiler.lib;dwmapi.lib;winhttp.lib;psapi.lib;bcrypt.lib;windowscodecs.lib;ole32.lib;dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d3dcompiler.lib;dwmapi.lib;psapi.lib;bcrypt.lib;windowscodecs.lib;ole32.lib;dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>false</EnableCOMDATFolding>
       <OptimizeReferences>false</OptimizeReferences>
     </Link>
@@ -78,7 +79,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir);$(ProjectDir)src\ext\imgui;$(ProjectDir)src\ext\imgui\backends;$(ProjectDir)src\ext\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir);$(ProjectDir)src\ext\imgui;$(ProjectDir)src\ext\imgui\backends;$(ProjectDir)src\ext\safetyhook;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;INVENTORY_UI;WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/utf-8 /Zc:threadSafeInit- /MP4 %(AdditionalOptions)</AdditionalOptions>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -89,13 +90,20 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;d3dcompiler.lib;dwmapi.lib;winhttp.lib;psapi.lib;bcrypt.lib;windowscodecs.lib;ole32.lib;dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d3dcompiler.lib;dwmapi.lib;psapi.lib;bcrypt.lib;windowscodecs.lib;ole32.lib;dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
   <Target Name="CopyBindings" AfterTargets="Build" Condition="Exists('$(ProjectDir)bindings.json')">
     <Copy SourceFiles="$(ProjectDir)bindings.json" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyLocalInventoryArt" AfterTargets="Build" Condition="Exists('$(ProjectDir).local\assets\inventory-game\manifest.json')">
+    <ItemGroup>
+      <LocalInventoryArt Include="$(ProjectDir).local\assets\inventory-game\*.png;$(ProjectDir).local\assets\inventory-game\manifest.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(LocalInventoryArt)" DestinationFolder="$(OutDir)assets\inventory-game\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LocalInventoryArt)" DestinationFolder="$(LocalAppData)\Iris\assets\inventory-game\" SkipUnchangedFiles="true" Condition="'$(LocalAppData)' != ''" />
   </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
@@ -124,6 +132,12 @@
     <ClCompile Include="src\core\features\inventory\catalog.cpp">
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="src\core\features\inventory\coordinator.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="src\core\features\inventory\equip_guard.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="src\core\features\inventory\gloves.cpp">
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
     </ClCompile>
@@ -135,10 +149,30 @@
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\features\inventory\music.hpp" />
+    <ClCompile Include="src\core\features\inventory\native_backend.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\native_backend.hpp" />
+    <ClCompile Include="src\core\features\inventory\owned_items.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\owned_items.hpp" />
     <ClInclude Include="src\core\features\inventory\patch.hpp" />
     <ClCompile Include="src\core\features\inventory\preview.cpp">
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="src\core\features\inventory\preview_receipts.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\preview_receipts.hpp" />
+    <ClCompile Include="src\core\features\inventory\rarities.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\rarities.hpp" />
+    <ClCompile Include="src\core\features\inventory\requests.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\requests.hpp" />
     <ClCompile Include="src\core\features\misc\misc.cpp">
       <ObjectFileName>$(IntDir)src\core\features\misc\</ObjectFileName>
     </ClCompile>
@@ -259,10 +293,12 @@
       <ObjectFileName>$(IntDir)src\core\hooks\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\hooks\dx11.hpp" />
-    <ClCompile Include="src\core\hooks\minhook.cpp">
+    <ClCompile Include="src\core\hooks\inline_hook.cpp">
       <ObjectFileName>$(IntDir)src\core\hooks\</ObjectFileName>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>%(AdditionalOptions) /Zc:threadSafeInit</AdditionalOptions>
     </ClCompile>
-    <ClInclude Include="src\core\hooks\minhook.hpp" />
+    <ClInclude Include="src\core\hooks\inline_hook.hpp" />
     <ClCompile Include="src\core\log.cpp">
       <ObjectFileName>$(IntDir)src\core\</ObjectFileName>
     </ClCompile>
@@ -390,19 +426,27 @@
       <ObjectFileName>$(IntDir)src\core\sdk\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\sdk\client.hpp" />
+    <ClCompile Include="src\core\sdk\economy_inventory.cpp">
+      <ObjectFileName>$(IntDir)src\core\sdk\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\sdk\economy_inventory.hpp" />
     <ClInclude Include="src\core\sdk\entities.hpp" />
     <ClInclude Include="src\core\sdk\experimental_commands.hpp" />
     <ClInclude Include="src\core\sdk\generated\agent_catalog.inc" />
     <None Include="src\core\sdk\generated\catalog_manifest.json" />
     <ClInclude Include="src\core\sdk\generated\client_bindings.hpp" />
     <ClInclude Include="src\core\sdk\generated\finish_colors.inc" />
+    <ClInclude Include="src\core\sdk\generated\inventory_rarities.inc" />
     <ClInclude Include="src\core\sdk\generated\music_catalog.inc" />
     <ClInclude Include="src\core\sdk\generated\skin_catalog.inc" />
-    <ClInclude Include="src\core\sdk\generated\thumbnail_sources.inc" />
     <ClInclude Include="src\core\sdk\generated\weapon_catalog.inc" />
     <ClInclude Include="src\core\sdk\offsets\build.hpp" />
     <ClInclude Include="src\core\sdk\offsets\offsets.inc" />
     <ClInclude Include="src\core\sdk\player_bindings.hpp" />
+    <ClCompile Include="src\core\sdk\preview_camera.cpp">
+      <ObjectFileName>$(IntDir)src\core\sdk\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\sdk\preview_camera.hpp" />
     <ClInclude Include="src\core\sdk\schema.hpp" />
     <ClInclude Include="src\core\sdk\types.hpp" />
     <ClInclude Include="src\core\sdk\visual_bindings.hpp" />
@@ -444,31 +488,21 @@
     <None Include="src\ext\imgui\LICENSE.txt" />
     <ClInclude Include="src\ext\json\json.hpp" />
     <None Include="src\ext\json\LICENSE.MIT" />
-    <ClInclude Include="src\ext\minhook\include\MinHook.h" />
-    <None Include="src\ext\minhook\LICENSE.txt" />
-    <ClCompile Include="src\ext\minhook\src\buffer.c">
-      <ObjectFileName>$(IntDir)src\ext\minhook\src\</ObjectFileName>
+    <None Include="src\ext\safetyhook\LICENSE.txt" />
+    <None Include="src\ext\safetyhook\README.md" />
+    <ClCompile Include="src\ext\safetyhook\safetyhook.cpp">
+      <ObjectFileName>$(IntDir)src\ext\safetyhook\</ObjectFileName>
+      <WarningLevel>Level1</WarningLevel>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalOptions>%(AdditionalOptions) /Zc:threadSafeInit</AdditionalOptions>
+      <UndefinePreprocessorDefinitions>NOMINMAX;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
+    </ClCompile>
+    <ClInclude Include="src\ext\safetyhook\safetyhook.hpp" />
+    <ClCompile Include="src\ext\safetyhook\Zydis.c">
+      <ObjectFileName>$(IntDir)src\ext\safetyhook\</ObjectFileName>
       <WarningLevel>Level1</WarningLevel>
     </ClCompile>
-    <ClInclude Include="src\ext\minhook\src\buffer.h" />
-    <ClInclude Include="src\ext\minhook\src\hde\hde32.h" />
-    <ClCompile Include="src\ext\minhook\src\hde\hde64.c">
-      <ObjectFileName>$(IntDir)src\ext\minhook\src\hde\</ObjectFileName>
-      <WarningLevel>Level1</WarningLevel>
-    </ClCompile>
-    <ClInclude Include="src\ext\minhook\src\hde\hde64.h" />
-    <ClInclude Include="src\ext\minhook\src\hde\pstdint.h" />
-    <ClInclude Include="src\ext\minhook\src\hde\table32.h" />
-    <ClInclude Include="src\ext\minhook\src\hde\table64.h" />
-    <ClCompile Include="src\ext\minhook\src\hook.c">
-      <ObjectFileName>$(IntDir)src\ext\minhook\src\</ObjectFileName>
-      <WarningLevel>Level1</WarningLevel>
-    </ClCompile>
-    <ClCompile Include="src\ext\minhook\src\trampoline.c">
-      <ObjectFileName>$(IntDir)src\ext\minhook\src\</ObjectFileName>
-      <WarningLevel>Level1</WarningLevel>
-    </ClCompile>
-    <ClInclude Include="src\ext\minhook\src\trampoline.h" />
+    <ClInclude Include="src\ext\safetyhook\Zydis.h" />
     <ClInclude Include="src\util\file_hash.hpp" />
     <ClInclude Include="src\util\math.hpp" />
     <ClCompile Include="src\util\memory.cpp">

@@ -49,6 +49,7 @@ void recover(Runtime& state) {
         try { restore(state, it->second); it = state.changed.erase(it); }
         catch (...) { ++it; }
     }
+    restore_owned_inventory(state);
     if (state.camera_saved) {
         (state.original_camera ? state.third : state.first)();
         state.camera_saved = state.camera_applied = false;
@@ -61,6 +62,8 @@ bool guarded_recover(Runtime* state) {
 }
 void __fastcall frame_hook(void* self, int stage) {
     auto& state = runtime();
+    unsigned unobserved=0;
+    state.preview_receipts.thread.compare_exchange_strong(unobserved,GetCurrentThreadId(),std::memory_order_release,std::memory_order_relaxed);
     if (stage == 0 && state.report.available) {
         if(state.accept_enabled.load() && GetTickCount64()>=state.accept_check){
             state.accept_check=GetTickCount64()+500;
@@ -83,6 +86,7 @@ void __fastcall frame_hook(void* self, int stage) {
         overlay_log(message);
     }
     if(stage==0 && state.report.available)try {
+        update_owned_inventory(state);
         if(!guarded_menu_models(&state))throw std::runtime_error("Menu model update raised an exception.");
     }catch(const std::exception& error){state.menu_model_tick=GetTickCount64()+10000;overlay_log(error.what());}
     if (stage != 6) return;
@@ -127,7 +131,8 @@ void __fastcall frame_hook(void* self, int stage) {
         state.report.detail = error.what();
         overlay_log(error.what());
         try {
-            if (!guarded_recover(&state) || !state.changed.empty() || state.glove || state.agent || state.music) {
+            if (!guarded_recover(&state) || !state.changed.empty() || state.glove || state.agent || state.music ||
+                (state.inventory_items && state.inventory_items->recovery_pending())) {
                 state.report.detail += " Restoration was incomplete; restart the map.";
                 overlay_log("Cosmetic restoration was incomplete after a failed update.");
             }
@@ -217,14 +222,26 @@ void bind(Runtime& state) {
     state.original_pawn_viewmodel=state.pawn_viewmodel_hook->original<PawnViewmodelSettings>();
     state.frame = std::make_unique<hooks::Hook>(*state.hooks, reinterpret_cast<void*>(state.client + bindings::frame_stage), reinterpret_cast<void*>(&frame_hook));
     state.original = state.frame->original<FrameStage>();
+    const auto manager=state.client+bindings::inventory_manager;
+    if(get<Address>(manager)!=state.client+bindings::inventory_vtable ||
+        method(manager,static_cast<int>(iris::sdk::binding_values::slots_inventory_equip))!=
+            state.client+iris::sdk::binding_values::client_inventory_manager_equip)
+        throw std::runtime_error("Inventory equip callback differs from the reviewed build.");
+    state.inventory_equip_guard=std::make_unique<hooks::Hook>(*state.hooks,
+        reinterpret_cast<void*>(state.client+iris::sdk::binding_values::client_inventory_manager_equip),
+        reinterpret_cast<void*>(&inventory_equip_hook));
+    state.original_inventory_equip=state.inventory_equip_guard->original<Runtime::InventoryEquip>();
     if (!module::pin()) throw std::runtime_error("Cannot retain cosmetic callback lifetime.");
     state.deathnotice_hook=std::make_unique<hooks::Hook>(*state.hooks,reinterpret_cast<void*>(state.client+bindings::deathnotice_event),reinterpret_cast<void*>(&deathnotice_hook));
     state.original_deathnotice=state.deathnotice_hook->original<HudUpdate>();
     state.scope_render_hook=std::make_unique<hooks::Hook>(*state.hooks,reinterpret_cast<void*>(state.client+bindings::scope_render),reinterpret_cast<void*>(&scope_render));
     state.original_scope_render=state.scope_render_hook->original<Runtime::ScopeRender>();
+    bind_preview_receipts(state);
     state.report.available = true;
+    state.inventory_equip_guard->enable();
     state.deathnotice_hook->enable();
     state.scope_render_hook->enable();
+    enable_preview_receipts(state);
     state.paint_hook->enable();
     state.seed_hook->enable();
     state.wear_hook->enable();
@@ -285,6 +302,8 @@ void submit(const Configuration& configuration) {
         state.menu_model_refresh=true;
     }
     state.requested = configuration;
+    state.inventory_receipt={configuration.revision,InventoryAcceptance::Pending,{}};
+    state.inventory_poll=0;
     nospread::settings.store(std::make_shared<const nospread::Settings>(configuration.no_spread_settings));
     nospread::aim_settings.store(std::make_shared<const combat::Settings>(configuration.combat_settings));
     nospread::enabled=configuration.no_spread;
@@ -294,7 +313,29 @@ void submit(const Configuration& configuration) {
 Status status() {
     auto& state = runtime();
     std::lock_guard lock(state.mutex);
-    return state.report;
+    auto report=state.report;
+    if(state.inventory_receipt.acceptance==InventoryAcceptance::Rejected && !state.inventory_receipt.detail.empty())
+        report.detail=state.inventory_receipt.detail;
+    else if(state.inventory_receipt.acceptance==InventoryAcceptance::Accepted && state.inventory_items) {
+        report.applied_revision=state.inventory_receipt.revision;
+        report.detail="Local inventory synced: "+std::to_string(state.inventory_items->owned_count())+" Iris items.";
+    }
+    return report;
+}
+InventoryReceipt await_inventory(std::uint64_t revision,unsigned timeout_ms) {
+    auto& state=runtime();
+    std::unique_lock lock(state.mutex);
+    if(!state.report.available || state.stopping)
+        return {revision,InventoryAcceptance::Rejected,state.report.available?"Inventory updates are stopped.":state.report.detail};
+    const auto completed=[&]{return state.stopping || !state.report.available ||
+        state.inventory_receipt.revision!=revision || state.inventory_receipt.acceptance!=InventoryAcceptance::Pending;};
+    if(!state.inventory_ready.wait_for(lock,std::chrono::milliseconds(timeout_ms),completed))
+        return {revision,InventoryAcceptance::Rejected,"Timed out waiting for the game-thread inventory transaction."};
+    if(state.inventory_receipt.revision!=revision)
+        return {revision,InventoryAcceptance::Rejected,"The inventory request was superseded before acceptance."};
+    if(state.stopping || !state.report.available)
+        return {revision,InventoryAcceptance::Rejected,"The game inventory became unavailable before acceptance."};
+    return state.inventory_receipt;
 }
 EquippedLoadout equipped_loadout() {
     auto& state = runtime();
@@ -307,13 +348,14 @@ void submit_environment(const Environment& environment) {
     state.environment=environment;
     world::publish(environment);
 }
-void request_preview(const Selection& selection) {
-    if (!valid(selection)) return;
+void request_preview(const Selection& selection,const PreviewPose& pose) {
+    if (!valid(selection) || !sdk::preview::valid_control(pose)) return;
     auto& state = runtime();
     std::lock_guard lock(state.mutex);
     if (!state.report.available) return;
     auto& preview = state.preview;
     preview.touched = GetTickCount64();
+    if(preview.pose!=pose){preview.pose=pose;preview.camera_changed=preview.touched;}
     if (!preview.requested || *preview.requested != selection) {
         preview.requested = selection; preview.changed = preview.touched;
     }
@@ -328,6 +370,8 @@ void stop() noexcept {
     auto& state = runtime();
     std::lock_guard lock(state.mutex);
     state.stopping = true;
+    state.inventory_poll=0;
+    state.inventory_ready.notify_all();
     nospread::enabled=false;
     nospread::stopped=true;
     visuals::snapshot.store(nullptr);

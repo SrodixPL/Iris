@@ -1,5 +1,6 @@
 // dear imgui: Platform Backend for Windows (standard windows API for 32-bits AND 64-bits applications)
 // This needs to be used along with a Renderer (e.g. DirectX11, OpenGL3, Vulkan..)
+// Iris adaptation: optional APIs use pinned, already-loaded modules only.
 
 // Implemented features:
 //  [X] Platform: Clipboard support (for Win32 this is actually part of core dear imgui)
@@ -112,6 +113,13 @@ typedef DWORD(WINAPI* PFN_XInputGetState)(DWORD, XINPUT_STATE*);
 #pragma GCC diagnostic ignored "-Wcast-function-type"       // warning: cast between incompatible function types (for loader)
 #endif
 
+// Pin only modules that Windows already knows about. No new image is loaded.
+static HMODULE ImGui_ImplWin32_GetLoadedModule(const char* name)
+{
+    HMODULE module = nullptr;
+    return ::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_PIN, name, &module) ? module : nullptr;
+}
+
 struct ImGui_ImplWin32_Data
 {
     HWND                        hWnd;
@@ -189,7 +197,7 @@ static bool ImGui_ImplWin32_InitEx(void* hwnd, bool platform_has_own_dc)
     main_viewport->PlatformHandle = main_viewport->PlatformHandleRaw = (void*)bd->hWnd;
     IM_UNUSED(platform_has_own_dc); // Used in 'docking' branch
 
-    // Dynamically load XInput library
+    // Use an already-loaded XInput library; gamepad support is optional.
 #ifndef IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
     bd->WantUpdateHasGamepad = true;
     const char* xinput_dll_names[] =
@@ -201,7 +209,7 @@ static bool ImGui_ImplWin32_InitEx(void* hwnd, bool platform_has_own_dc)
         "xinput1_1.dll"    // DirectX SDK
     };
     for (int n = 0; n < IM_COUNTOF(xinput_dll_names); n++)
-        if (HMODULE dll = ::LoadLibraryA(xinput_dll_names[n]))
+        if (HMODULE dll = ImGui_ImplWin32_GetLoadedModule(xinput_dll_names[n]))
         {
             bd->XInputDLL = dll;
             bd->XInputGetCapabilities = (PFN_XInputGetCapabilities)::GetProcAddress(dll, "XInputGetCapabilities");
@@ -231,11 +239,7 @@ void    ImGui_ImplWin32_Shutdown()
     ImGuiIO& io = ImGui::GetIO();
     ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
 
-    // Unload XInput library
-#ifndef IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
-    if (bd->XInputDLL)
-        ::FreeLibrary(bd->XInputDLL);
-#endif // IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
+    // XInput is a pinned host module; the backend does not own a load reference.
 
     io.BackendPlatformName = nullptr;
     io.BackendPlatformUserData = nullptr;
@@ -894,7 +898,7 @@ void ImGui_ImplWin32_EnableDpiAwareness()
 {
     if (_IsWindows10OrGreater())
     {
-        static HINSTANCE user32_dll = ::LoadLibraryA("user32.dll"); // Reference counted per-process
+        const HINSTANCE user32_dll = ::GetModuleHandleA("user32.dll"); // Imported by Iris.
         if (PFN_SetProcessDpiAwarenessContext SetProcessDpiAwarenessContextFn = (PFN_SetProcessDpiAwarenessContext)::GetProcAddress(user32_dll, "SetProcessDpiAwarenessContext")) // Windows 10 v1703+
         {
             SetProcessDpiAwarenessContextFn(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -908,8 +912,9 @@ void ImGui_ImplWin32_EnableDpiAwareness()
     }
     if (_IsWindows8Point1OrGreater())
     {
-        static HINSTANCE shcore_dll = ::LoadLibraryA("shcore.dll"); // Reference counted per-process
-        if (PFN_SetProcessDpiAwareness SetProcessDpiAwarenessFn = (PFN_SetProcessDpiAwareness)::GetProcAddress(shcore_dll, "SetProcessDpiAwareness"))
+        const HINSTANCE shcore_dll = ImGui_ImplWin32_GetLoadedModule("shcore.dll");
+        if (PFN_SetProcessDpiAwareness SetProcessDpiAwarenessFn = shcore_dll
+            ? (PFN_SetProcessDpiAwareness)::GetProcAddress(shcore_dll, "SetProcessDpiAwareness") : nullptr)
         {
             SetProcessDpiAwarenessFn(PROCESS_PER_MONITOR_DPI_AWARE);
             return;
@@ -929,10 +934,9 @@ float ImGui_ImplWin32_GetDpiScaleForMonitor(void* monitor)
     UINT xdpi = 96, ydpi = 96;
     if (_IsWindows8Point1OrGreater())
     {
-        static HINSTANCE shcore_dll = ::LoadLibraryA("shcore.dll"); // Reference counted per-process
-        static PFN_GetDpiForMonitor GetDpiForMonitorFn = nullptr;
-        if (GetDpiForMonitorFn == nullptr && shcore_dll != nullptr)
-            GetDpiForMonitorFn = (PFN_GetDpiForMonitor)::GetProcAddress(shcore_dll, "GetDpiForMonitor");
+        const HINSTANCE shcore_dll = ImGui_ImplWin32_GetLoadedModule("shcore.dll");
+        const PFN_GetDpiForMonitor GetDpiForMonitorFn = shcore_dll
+            ? (PFN_GetDpiForMonitor)::GetProcAddress(shcore_dll, "GetDpiForMonitor") : nullptr;
         if (GetDpiForMonitorFn != nullptr)
         {
             GetDpiForMonitorFn((HMONITOR)monitor, MDT_EFFECTIVE_DPI, &xdpi, &ydpi);

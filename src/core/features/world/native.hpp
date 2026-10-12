@@ -1,6 +1,6 @@
 #pragma once
 #include "core/features/inventory/inventory.hpp"
-#include "core/hooks/minhook.hpp"
+#include "core/hooks/inline_hook.hpp"
 #include "core/sdk/world_bindings.hpp"
 namespace iris::world {
 void bind(std::uintptr_t client,hooks::Runtime& hooks);

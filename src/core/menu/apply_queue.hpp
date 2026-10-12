@@ -19,21 +19,25 @@ class ApplyQueue {
   RuntimeSnapshot snapshot_;
   std::atomic<bool> stopping_{};
   std::atomic<bool> refresh_{true};
-  std::atomic<std::shared_ptr<const cosmetics::Selection>> preview_request_;
+  std::atomic<std::shared_ptr<const cosmetics::PreviewRequest>> preview_request_;
   std::atomic<std::uint64_t> preview_until_{};
+  std::atomic<std::shared_ptr<const cosmetics::PreviewImage>> preview_image_;
+  std::shared_ptr<void> preview_wake_;
   std::size_t pending_{};
   std::thread worker_;
+  std::thread preview_worker_;
 public:
   using Submit=void(*)(const cosmetics::Configuration&);
   using Status=cosmetics::Status(*)();
   using Roster=cosmetics::EquippedLoadout(*)();
-  explicit ApplyQueue(MenuState initial,Submit submit=cosmetics::submit,Status status=cosmetics::status,Roster roster=cosmetics::equipped_loadout);
+  using Await=cosmetics::InventoryReceipt(*)(std::uint64_t,unsigned);
+  explicit ApplyQueue(MenuState initial,Submit submit=cosmetics::submit,Status status=cosmetics::status,Roster roster=cosmetics::equipped_loadout,Await await=nullptr);
   ~ApplyQueue();
   bool submit(const MenuState& requested,const std::string& context={},bool load=false);
   std::optional<ApplyResult> poll();
   bool pending() const { return pending_!=0; }
   void refresh();
-  void preview(const cosmetics::Selection& selection);
+  void preview(const cosmetics::Selection& selection,const cosmetics::PreviewPose& pose={});
   std::optional<RuntimeSnapshot> snapshot();
 };
 void publish_apply(MenuState& displayed,const ApplyResult& result);

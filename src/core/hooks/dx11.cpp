@@ -2,7 +2,7 @@
 #include "core/module.hpp"
 #include "core/thread_state.hpp"
 #include <d3d11.h>
-#include "core/hooks/minhook.hpp"
+#include "core/hooks/inline_hook.hpp"
 #include "core/log.hpp"
 #include "core/render/renderer.hpp"
 #include "core/features/inventory/inventory.hpp"

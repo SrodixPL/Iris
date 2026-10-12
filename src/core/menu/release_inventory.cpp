@@ -88,9 +88,11 @@ void bind_inventory(MenuRuntime& state) {
     auto& state=*static_cast<MenuRuntime*>(owner);
     if(!state.gameplay_wired || !state.apply_queue || !feature_switches::enabled(state.values,"Misc/Inventory/Live updating preview"))return InventoryArt{};
     const auto& draft=state.inventory.detail_draft;cosmetics::Selection selection;selection.definition=definition;selection.paint=paint;selection.wear=draft.wear;selection.seed=draft.seed;selection.stattrak=draft.stattrak?draft.counter:-1;selection.name=draft.name;
-    if(!cosmetics::valid(selection))return InventoryArt{};
-    state.apply_queue->preview(selection);
-    return state.images && state.preview_image && state.preview_image->selection==selection ? state.images->preview(*state.preview_image) : InventoryArt{};
+    if(!cosmetics::valid(selection))return state.images ? state.images->last_preview(definition) : InventoryArt{};
+    const auto& camera=state.inventory.preview_pose;
+    state.apply_queue->preview(selection,{camera[0],camera[1],camera[2]});
+    if(!state.images)return InventoryArt{};
+    return state.preview_image && state.preview_image->selection.definition==selection.definition ? state.images->preview(*state.preview_image) : state.images->last_preview(definition);
   };
   adapter.request_refresh=[](void* owner){auto& state=*static_cast<MenuRuntime*>(owner);if(state.apply_queue)state.apply_queue->refresh();};
   adapter.refresh_loadout=[](void* owner,int team,InventorySide& output) {

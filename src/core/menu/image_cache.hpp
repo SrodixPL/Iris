@@ -15,8 +15,10 @@ class ImageCache {
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> preview_texture_;
     std::uint64_t preview_revision_{};
     float preview_aspect_{1};
+    int preview_definition_{};
+    bool preview_interactive_{};
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
-    std::filesystem::path root_,cache_;std::mutex mutex_;std::deque<Pixels> decoded_;
+    std::filesystem::path root_;std::mutex mutex_;std::deque<Pixels> decoded_;
     std::unordered_map<std::uint64_t,Image> images_;std::atomic_bool stopping_{};FileWorker worker_;
     Image& image(int definition,int paint);
 public:
@@ -24,6 +26,7 @@ public:
     ~ImageCache();
     void pump();
     InventoryArt preview(const cosmetics::PreviewImage& image);
+    InventoryArt last_preview(int definition) const;
     InventoryArt art(int definition,int paint);
     void draw(int definition,int paint,ImVec2 position,ImVec2 size);
 };

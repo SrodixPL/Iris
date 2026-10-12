@@ -1,6 +1,7 @@
 #pragma once
 #include <filesystem>
-#include <atomic>
 namespace iris::ui {
-bool download_thumbnail(int definition, int paint, const std::filesystem::path& destination, const std::atomic_bool& stopping);
+// Worker-thread lookup in an art pack decoded from the installed game VPK.
+std::filesystem::path local_thumbnail_root(const std::filesystem::path& module_folder);
+std::filesystem::path local_thumbnail_path(const std::filesystem::path& root, int definition, int paint);
 }

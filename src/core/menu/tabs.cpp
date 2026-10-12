@@ -242,7 +242,7 @@ void inventory_picker(MenuRuntime& state) {
   canvas.panel_fraction=canvas.panel_from+(canvas.panel_target-canvas.panel_from)*canvas.panel_motion.step(state.settings.animations,theme::inventory_panel_seconds);
   const auto body=ImGui::GetCursorScreenPos();
   const auto area=ImGui::GetContentRegionAvail();
-  const float panel_width=theme::inventory_panel_width*s;
+  const float panel_width=std::min(theme::inventory_panel_width*s,area.x*.48f);
   const float reserve=canvas.panel_fraction*(panel_width+theme::inventory_picker_pad*s);
   const float grid_width=std::max(1.f,area.x-reserve);
   ImGui::BeginChild("picker_catalog",{grid_width,area.y},ImGuiChildFlags_NavFlattened);
@@ -360,28 +360,65 @@ void inventory_picker(MenuRuntime& state) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{theme::inventory_spacing*s,theme::inventory_panel_spacing*s});
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{theme::inventory_spacing*s,theme::inventory_inset*s});
-    ImGui::BeginChild("skin_settings",{panel_width,area.y},ImGuiChildFlags_AlwaysUseWindowPadding|ImGuiChildFlags_NavFlattened,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::BeginChild("skin_settings",{panel_width,area.y},ImGuiChildFlags_AlwaysUseWindowPadding|ImGuiChildFlags_NavFlattened);
     canvas.panel_bounds={ImGui::GetWindowPos(),{ImGui::GetWindowPos().x+panel_width,ImGui::GetWindowPos().y+area.y}};
     auto* draw=ImGui::GetWindowDrawList(); draw->AddLine(position,{position.x,position.y+area.y},ImGui::GetColorU32(theme::border));
     ImGui::Indent(theme::inventory_panel_pad*s);
     const float width=ImGui::GetContentRegionAvail().x;
+    const float preview_inset=theme::inventory_tile_inset*s;
+    const float preview_art=std::min(theme::inventory_preview_art*s,std::max(1.f,width-2*preview_inset)*.75f);
+    const float preview_title_y=preview_art+2*preview_inset;
+    const float preview_skin_y=preview_title_y+theme::inventory_label_height*s;
+    const float preview_height=preview_skin_y+(theme::inventory_preview_height-theme::inventory_preview_skin_y)*s;
     const auto preview=ImGui::GetCursorScreenPos();
     auto preview_tint=theme::section_surface;
-    draw->AddRectFilled(preview,{preview.x+width,preview.y+theme::inventory_preview_height*s},ImGui::GetColorU32(preview_tint),theme::inventory_card_radius*s);
-    draw->AddRect(preview,{preview.x+width,preview.y+theme::inventory_preview_height*s},ImGui::GetColorU32(theme::border),theme::inventory_card_radius*s,ImDrawFlags_RoundCornersAll,theme::surface_border_width*s);
+    draw->AddRectFilled(preview,{preview.x+width,preview.y+preview_height},ImGui::GetColorU32(preview_tint),theme::inventory_card_radius*s);
+    draw->AddRect(preview,{preview.x+width,preview.y+preview_height},ImGui::GetColorU32(theme::border),theme::inventory_card_radius*s,ImDrawFlags_RoundCornersAll,theme::surface_border_width*s);
+    if(canvas.preview_definition!=value.definition){canvas.preview_definition=value.definition;canvas.preview_pose={0,0,theme::inventory_preview_zoom};canvas.preview_dragged=false;canvas.preview_click_time=-1;}
     auto art=slot!=-4&&value.definition>0 && canvas.adapter.preview ? canvas.adapter.preview(canvas.adapter.owner,value.definition,value.paint) : InventoryArt{};
     if(!art.texture.GetTexID() && value.definition>0 && canvas.adapter.resolve_art) art=canvas.adapter.resolve_art(canvas.adapter.owner,slot==-4?-4:value.definition,slot==-4?value.definition:value.paint);
-    const float preview_inset=theme::inventory_tile_inset*s;
-    inventory::image_tile(art,{preview.x+preview_inset,preview.y+preview_inset},{width-2*preview_inset,theme::inventory_skin_art*s},s);
+    inventory::image_tile(art,{preview.x+preview_inset,preview.y+preview_inset},{width-2*preview_inset,preview_art},s,1.f);
     const auto* f=finish(value.definition,value.paint);
     const char* preview_name=tile->name.c_str();
     for(const auto& weapon:weapons) if(weapon.definition==value.definition) preview_name=weapon.name;
-    inventory::ellipsized_caption(preview_name,{preview.x+preview_inset,widgets::text_y(preview.y+theme::inventory_preview_title_y*s,(theme::inventory_preview_skin_y-theme::inventory_preview_title_y)*s)},{preview.x+width-preview_inset,preview.y+theme::inventory_preview_skin_y*s},ImGui::GetColorU32(theme::text));
+    inventory::ellipsized_caption(preview_name,{preview.x+preview_inset,widgets::text_y(preview.y+preview_title_y,preview_skin_y-preview_title_y)},{preview.x+width-preview_inset,preview.y+preview_skin_y},ImGui::GetColorU32(theme::text));
     const char* selection_name=f ? f->name : "Default";
     if(slot==-4)if(const auto* kit=cosmetics::find_music_kit(value.definition))selection_name=kit->name;
     if(slot==-3) { for(const auto& agent:agents) if(agent.definition==value.definition) selection_name=agent.name; if(!value.custom_model.empty())selection_name=value.custom_model.c_str(); }
-    inventory::ellipsized_caption(selection_name,{preview.x+preview_inset,widgets::text_y(preview.y+theme::inventory_preview_skin_y*s,(theme::inventory_preview_height-theme::inventory_preview_skin_y)*s)},{preview.x+width-preview_inset,preview.y+theme::inventory_preview_height*s},ImGui::GetColorU32(theme::secondary));
-    ImGui::Dummy({width,theme::inventory_preview_height*s}); canvas.preview_bounds={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
+    inventory::ellipsized_caption(selection_name,{preview.x+preview_inset,widgets::text_y(preview.y+preview_skin_y,preview_height-preview_skin_y)},{preview.x+width-preview_inset,preview.y+preview_height},ImGui::GetColorU32(theme::secondary));
+    if(art.interactive) {
+      ImGui::InvisibleButton("##skin_preview",{width,preview_height});
+      const bool blocked=ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel);
+      const bool hovered=!blocked && ImGui::IsItemHovered();
+      if(ImGui::IsItemDeactivated()) {
+        // Count completed clicks rather than press events: a drag must not
+        // become the first click of a reset when another drag starts quickly.
+        if(blocked || canvas.preview_dragged)canvas.preview_click_time=-1;
+        else {
+          const auto& io=ImGui::GetIO();const double now=ImGui::GetTime();
+          const float dx=io.MousePos.x-canvas.preview_click_position.x,dy=io.MousePos.y-canvas.preview_click_position.y;
+          if(canvas.preview_click_time>=0 && now-canvas.preview_click_time<=io.MouseDoubleClickTime &&
+             dx*dx+dy*dy<=io.MouseDoubleClickMaxDist*io.MouseDoubleClickMaxDist) {
+            canvas.preview_pose={0,0,theme::inventory_preview_zoom};canvas.preview_click_time=-1;
+          } else {canvas.preview_click_time=now;canvas.preview_click_position=io.MousePos;}
+        }
+      }
+      if(blocked || !ImGui::IsItemActive() || ImGui::IsItemActivated())canvas.preview_dragged=false;
+      if(hovered) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+        if(ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY))
+          canvas.preview_pose[2]=std::clamp(canvas.preview_pose[2]+ImGui::GetIO().MouseWheel*.12f,-1.1f,1.5f);
+        if(!ImGui::IsItemActive() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+          ImGui::SetTooltip("Drag to rotate. Scroll to zoom. Double-click to reset.");
+      }
+      if(!blocked && ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left,4*s)) {
+        canvas.preview_dragged=true;
+        const auto delta=ImGui::GetIO().MouseDelta;
+        canvas.preview_pose[0]=std::remainder(canvas.preview_pose[0]-delta.x*theme::inventory_preview_rotation/s,360.f);
+        canvas.preview_pose[1]=std::clamp(canvas.preview_pose[1]+delta.y*theme::inventory_preview_rotation/s,-75.f,75.f);
+      }
+    } else {canvas.preview_dragged=false;canvas.preview_click_time=-1;ImGui::Dummy({width,preview_height});}
+    canvas.preview_bounds={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
     ImGui::BeginDisabled(!available_apply);
     if(slot!=-3 && slot!=-4) {
       float wear=canvas.wear_editing ? canvas.wear_value : value.wear;

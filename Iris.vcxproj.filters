@@ -64,17 +64,8 @@
     <Filter Include="src\ext\json">
       <UniqueIdentifier>{d095f76c-f3e4-59a5-a896-23971d9b76dc}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\ext\minhook">
-      <UniqueIdentifier>{9e0e8b34-1a61-59c7-a978-de6cccc6b9af}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="src\ext\minhook\include">
-      <UniqueIdentifier>{44aa7516-c5c7-56f7-9d17-637204c40e09}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="src\ext\minhook\src">
-      <UniqueIdentifier>{6bc7ee42-894a-5122-a800-59e08525bc0d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="src\ext\minhook\src\hde">
-      <UniqueIdentifier>{b115892a-0806-5299-9d04-5e500812bedf}</UniqueIdentifier>
+    <Filter Include="src\ext\safetyhook">
+      <UniqueIdentifier>{78ac23b4-9bab-5f4b-8b20-b890788d166f}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\util">
       <UniqueIdentifier>{517d3de5-2a56-57fd-9b80-43e0651cfc9f}</UniqueIdentifier>
@@ -126,6 +117,12 @@
     <ClCompile Include="src\core\features\inventory\catalog.cpp">
       <Filter>src\core\features\inventory</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\features\inventory\coordinator.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\features\inventory\equip_guard.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\features\inventory\gloves.cpp">
       <Filter>src\core\features\inventory</Filter>
     </ClCompile>
@@ -141,12 +138,42 @@
     <ClInclude Include="src\core\features\inventory\music.hpp">
       <Filter>src\core\features\inventory</Filter>
     </ClInclude>
+    <ClCompile Include="src\core\features\inventory\native_backend.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\native_backend.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\inventory\owned_items.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\owned_items.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\features\inventory\patch.hpp">
       <Filter>src\core\features\inventory</Filter>
     </ClInclude>
     <ClCompile Include="src\core\features\inventory\preview.cpp">
       <Filter>src\core\features\inventory</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\features\inventory\preview_receipts.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\preview_receipts.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\inventory\rarities.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\rarities.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\inventory\requests.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\requests.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
     <ClCompile Include="src\core\features\misc\misc.cpp">
       <Filter>src\core\features\misc</Filter>
     </ClCompile>
@@ -315,10 +342,10 @@
     <ClInclude Include="src\core\hooks\dx11.hpp">
       <Filter>src\core\hooks</Filter>
     </ClInclude>
-    <ClCompile Include="src\core\hooks\minhook.cpp">
+    <ClCompile Include="src\core\hooks\inline_hook.cpp">
       <Filter>src\core\hooks</Filter>
     </ClCompile>
-    <ClInclude Include="src\core\hooks\minhook.hpp">
+    <ClInclude Include="src\core\hooks\inline_hook.hpp">
       <Filter>src\core\hooks</Filter>
     </ClInclude>
     <ClCompile Include="src\core\log.cpp">
@@ -522,6 +549,12 @@
     <ClInclude Include="src\core\sdk\client.hpp">
       <Filter>src\core\sdk</Filter>
     </ClInclude>
+    <ClCompile Include="src\core\sdk\economy_inventory.cpp">
+      <Filter>src\core\sdk</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\sdk\economy_inventory.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\sdk\entities.hpp">
       <Filter>src\core\sdk</Filter>
     </ClInclude>
@@ -540,13 +573,13 @@
     <ClInclude Include="src\core\sdk\generated\finish_colors.inc">
       <Filter>src\core\sdk\generated</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\sdk\generated\inventory_rarities.inc">
+      <Filter>src\core\sdk\generated</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\sdk\generated\music_catalog.inc">
       <Filter>src\core\sdk\generated</Filter>
     </ClInclude>
     <ClInclude Include="src\core\sdk\generated\skin_catalog.inc">
-      <Filter>src\core\sdk\generated</Filter>
-    </ClInclude>
-    <ClInclude Include="src\core\sdk\generated\thumbnail_sources.inc">
       <Filter>src\core\sdk\generated</Filter>
     </ClInclude>
     <ClInclude Include="src\core\sdk\generated\weapon_catalog.inc">
@@ -559,6 +592,12 @@
       <Filter>src\core\sdk\offsets</Filter>
     </ClInclude>
     <ClInclude Include="src\core\sdk\player_bindings.hpp">
+      <Filter>src\core\sdk</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\sdk\preview_camera.cpp">
+      <Filter>src\core\sdk</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\sdk\preview_camera.hpp">
       <Filter>src\core\sdk</Filter>
     </ClInclude>
     <ClInclude Include="src\core\sdk\schema.hpp">
@@ -630,44 +669,23 @@
     <None Include="src\ext\json\LICENSE.MIT">
       <Filter>src\ext\json</Filter>
     </None>
-    <ClInclude Include="src\ext\minhook\include\MinHook.h">
-      <Filter>src\ext\minhook\include</Filter>
-    </ClInclude>
-    <None Include="src\ext\minhook\LICENSE.txt">
-      <Filter>src\ext\minhook</Filter>
+    <None Include="src\ext\safetyhook\LICENSE.txt">
+      <Filter>src\ext\safetyhook</Filter>
     </None>
-    <ClCompile Include="src\ext\minhook\src\buffer.c">
-      <Filter>src\ext\minhook\src</Filter>
+    <None Include="src\ext\safetyhook\README.md">
+      <Filter>src\ext\safetyhook</Filter>
+    </None>
+    <ClCompile Include="src\ext\safetyhook\safetyhook.cpp">
+      <Filter>src\ext\safetyhook</Filter>
     </ClCompile>
-    <ClInclude Include="src\ext\minhook\src\buffer.h">
-      <Filter>src\ext\minhook\src</Filter>
+    <ClInclude Include="src\ext\safetyhook\safetyhook.hpp">
+      <Filter>src\ext\safetyhook</Filter>
     </ClInclude>
-    <ClInclude Include="src\ext\minhook\src\hde\hde32.h">
-      <Filter>src\ext\minhook\src\hde</Filter>
-    </ClInclude>
-    <ClCompile Include="src\ext\minhook\src\hde\hde64.c">
-      <Filter>src\ext\minhook\src\hde</Filter>
+    <ClCompile Include="src\ext\safetyhook\Zydis.c">
+      <Filter>src\ext\safetyhook</Filter>
     </ClCompile>
-    <ClInclude Include="src\ext\minhook\src\hde\hde64.h">
-      <Filter>src\ext\minhook\src\hde</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ext\minhook\src\hde\pstdint.h">
-      <Filter>src\ext\minhook\src\hde</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ext\minhook\src\hde\table32.h">
-      <Filter>src\ext\minhook\src\hde</Filter>
-    </ClInclude>
-    <ClInclude Include="src\ext\minhook\src\hde\table64.h">
-      <Filter>src\ext\minhook\src\hde</Filter>
-    </ClInclude>
-    <ClCompile Include="src\ext\minhook\src\hook.c">
-      <Filter>src\ext\minhook\src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\ext\minhook\src\trampoline.c">
-      <Filter>src\ext\minhook\src</Filter>
-    </ClCompile>
-    <ClInclude Include="src\ext\minhook\src\trampoline.h">
-      <Filter>src\ext\minhook\src</Filter>
+    <ClInclude Include="src\ext\safetyhook\Zydis.h">
+      <Filter>src\ext\safetyhook</Filter>
     </ClInclude>
     <ClInclude Include="src\util\file_hash.hpp">
       <Filter>src\util</Filter>

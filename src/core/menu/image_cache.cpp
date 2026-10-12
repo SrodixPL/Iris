@@ -2,6 +2,7 @@
 #include "core/features/inventory/inventory.hpp"
 #include "core/menu/theme.hpp"
 #include "core/menu/thumbnail_source.hpp"
+#include "core/log.hpp"
 #include <wincodec.h>
 #include <algorithm>
 namespace iris::ui {
@@ -11,9 +12,9 @@ std::uint64_t key_for(int definition,int paint){return (static_cast<std::uint64_
 }
 ImageCache::ImageCache(ID3D11Device* device):device_(device){
     const auto executable=executable_folder();worker_.push([this,executable]{
-        wchar_t appdata[32768]{};const auto length=GetEnvironmentVariableW(L"LOCALAPPDATA",appdata,32768);
-        cache_=(length && length<32768 ? std::filesystem::path(appdata)/L"Iris" : executable)/L"assets/inventory";
-        auto path=executable;std::error_code lookup_error;for(int i=0;i<8;++i){if(std::filesystem::is_directory(path/"assets/inventory", lookup_error)){root_=path/"assets/inventory";break;}path=path.parent_path();}
+        root_=local_thumbnail_root(executable);
+        overlay_log(root_.empty()?"Local inventory artwork unavailable in the Iris data directory.":
+            "Local inventory artwork found in the Iris data directory.");
     });
 }
 ImageCache::~ImageCache(){stopping_=true;}
@@ -23,14 +24,13 @@ ImageCache::Image& ImageCache::image(int definition,int paint){
     entry.missing=false;
     entry.pending=worker_.push([this,key,definition,paint]{
         if(stopping_)return;
+        // An injected image can use the Iris data directory rather than a
+        // module filename. Retry discovery if artwork was deployed later.
+        if(root_.empty())root_=local_thumbnail_root(executable_folder());
         Pixels result;result.key=key;const auto initialized=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
         try{const bool decoded=[&]{
-            const auto name=std::to_string(definition)+"_"+std::to_string(paint)+".png";
-            auto path=root_/name;std::error_code lookup_error;
-            if(root_.empty()||!std::filesystem::is_regular_file(path,lookup_error)){
-                path=cache_/name;
-                if(!std::filesystem::is_regular_file(path,lookup_error)&&!download_thumbnail(definition,paint,path,stopping_))return false;
-            }
+            const auto path=local_thumbnail_path(root_,definition,paint);
+            if(path.empty())return false;
             ComPtr<IWICImagingFactory> factory;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;ComPtr<IWICFormatConverter> converter;
             if(FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))||FAILED(factory->CreateDecoderFromFilename(path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder))||FAILED(decoder->GetFrame(0,&frame))||FAILED(factory->CreateFormatConverter(&converter))||FAILED(converter->Initialize(frame.Get(),GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom))||FAILED(converter->GetSize(&result.width,&result.height)))return false;
             if(!result.width||!result.height||result.width>2048||result.height>2048)return false;
@@ -55,14 +55,19 @@ void ImageCache::pump(){
     if(images_.size()>128)std::erase_if(images_,[](const auto& pair){return !pair.second.pending&&pair.second.last_frame<ImGui::GetFrameCount()-120;});
 }
 InventoryArt ImageCache::preview(const cosmetics::PreviewImage& image){
-    if(!image.width||!image.height||image.width>4096||image.height>4096||image.rgba.size()!=std::size_t(image.width)*image.height*4)return {};
+    if(!image.width||!image.height||image.width>4096||image.height>4096||image.rgba.size()!=std::size_t(image.width)*image.height*4)return last_preview(image.selection.definition);
     if(preview_revision_!=image.revision){
         D3D11_TEXTURE2D_DESC desc{};desc.Width=image.width;desc.Height=image.height;desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_IMMUTABLE;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
         D3D11_SUBRESOURCE_DATA pixels{image.rgba.data(),image.width*4,0};ComPtr<ID3D11Texture2D> texture;ComPtr<ID3D11ShaderResourceView> view;
-        if(FAILED(device_->CreateTexture2D(&desc,&pixels,&texture))||FAILED(device_->CreateShaderResourceView(texture.Get(),nullptr,&view)))return {};
+        if(FAILED(device_->CreateTexture2D(&desc,&pixels,&texture))||FAILED(device_->CreateShaderResourceView(texture.Get(),nullptr,&view)))return last_preview(image.selection.definition);
         preview_texture_=std::move(view);preview_revision_=image.revision;preview_aspect_=static_cast<float>(image.width)/image.height;
+        preview_definition_=image.selection.definition;preview_interactive_=image.interactive;
     }
-    return {ImTextureRef(reinterpret_cast<ImTextureID>(preview_texture_.Get())),{0,0},{1,1},preview_aspect_};
+    return last_preview(image.selection.definition);
+}
+InventoryArt ImageCache::last_preview(int definition) const {
+    if(!preview_texture_ || preview_definition_!=definition)return {};
+    return {ImTextureRef(reinterpret_cast<ImTextureID>(preview_texture_.Get())),{0,0},{1,1},preview_aspect_,preview_interactive_};
 }
 InventoryArt ImageCache::art(int definition,int paint){auto& value=image(definition,paint);return {ImTextureRef(reinterpret_cast<ImTextureID>(value.texture.Get())),value.uv0,value.uv1,value.aspect};}
 void ImageCache::draw(int definition,int paint,ImVec2 p,ImVec2 size){

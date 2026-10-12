@@ -9,6 +9,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include "core/sdk/preview_camera.hpp"
 
 namespace iris::cosmetics {
 struct Finish {
@@ -95,9 +96,12 @@ struct PreviewImage {
     unsigned width{}, height{};
     std::vector<unsigned char> rgba;
     std::string detail;
+    bool interactive{};
 };
+using PreviewPose=sdk::preview::CameraControl;
+struct PreviewRequest {Selection selection;PreviewPose pose;bool operator==(const PreviewRequest&) const=default;};
 // Transient, debounced rendering of an owned item. Never commits a loadout.
-void request_preview(const Selection& selection);
+void request_preview(const Selection& selection,const PreviewPose& pose={});
 PreviewImage preview_image(std::uint64_t after_revision = 0);
 struct Status {
     bool available{};
@@ -120,5 +124,14 @@ void validate_configuration(const Configuration& configuration);
 void start() noexcept;
 void submit(const Configuration& configuration);
 Status status();
+enum class InventoryAcceptance { Pending, Accepted, Rejected };
+struct InventoryReceipt {
+    std::uint64_t revision{};
+    InventoryAcceptance acceptance{InventoryAcceptance::Pending};
+    std::string detail;
+};
+// Worker-only acknowledgement. Native work runs on the game thread, including
+// main-menu frames; a settings submission alone does not accept inventory work.
+InventoryReceipt await_inventory(std::uint64_t revision,unsigned timeout_ms);
 void stop() noexcept;
 }

@@ -181,9 +181,9 @@ void merge(const MenuState& before,const MenuState& requested,const MenuState& a
   target.cosmetics.gloves=target.inventory.gloves;
 }
 }
-ApplyQueue::ApplyQueue(MenuState initial,Submit submit,Status status,Roster roster):requested_(initial),wake_(make_event()),worker_([this,initial=std::move(initial),submit,status,roster]() mutable {
+ApplyQueue::ApplyQueue(MenuState initial,Submit submit,Status status,Roster roster,Await await):requested_(initial),wake_(make_event()),preview_wake_(make_event()),worker_([this,initial=std::move(initial),submit,status,roster,await]() mutable {
   MenuRuntime owned;owned.values=std::move(initial);owned.startup_loading=true;owned.submit_adapter=submit;owned.gameplay_wired=true;
-  std::uint64_t preview_revision{};std::shared_ptr<const cosmetics::PreviewImage> preview;
+  const auto native_wait=await?await:submit==cosmetics::submit?cosmetics::await_inventory:nullptr;
   for(;;) {
     if(read_.load(std::memory_order_relaxed)==written_.load(std::memory_order_acquire) && !refresh_.exchange(false) && !stopping_)
       WaitForSingleObject(wake_.get(),500);
@@ -198,19 +198,50 @@ ApplyQueue::ApplyQueue(MenuState initial,Submit submit,Status status,Roster rost
       // Merge deltas so failed earlier requests cannot reappear in later queued edits.
       merge(result.before,result.requested,owned.values,owned.values,false);
       if(!submit_features(owned)){owned.values=previous;result.error=owned.error;}
+      else if(native_wait) {
+        const auto receipt=native_wait(owned.values.cosmetics.revision,5000);
+        if(receipt.acceptance!=cosmetics::InventoryAcceptance::Accepted) {
+          result.error=receipt.detail;
+          // Use a fresh revision to supersede any timed-out native work. The
+          // worker waits for restoration before publishing field-level rollback.
+          const auto failed_revision=owned.values.cosmetics.revision;
+          owned.values=previous;owned.values.cosmetics.revision=failed_revision;
+          if(submit_features(owned)) {
+            const auto restored=native_wait(owned.values.cosmetics.revision,5000);
+            if(restored.acceptance!=cosmetics::InventoryAcceptance::Accepted)
+              result.error+=" Previous settings restoration is pending: "+restored.detail;
+          } else result.error+=" Previous settings could not be resubmitted: "+owned.error;
+        }
+      }
       result.actual=owned.values;
       {std::lock_guard lock(mutex_);results_.push_back(std::move(result));}
     }
-    try{
-      if(GetTickCount64()<preview_until_.load())if(const auto request=preview_request_.load())cosmetics::request_preview(*request);
-      auto image=cosmetics::preview_image(preview_revision);
-      if(image.revision && image.revision!=preview_revision){preview_revision=image.revision;preview=std::make_shared<const cosmetics::PreviewImage>(std::move(image));}
-    }catch(const std::exception&){preview.reset();}
-    auto current=RuntimeSnapshot{status(),roster(),preview};
+    auto current=RuntimeSnapshot{status(),roster(),{}};
     {std::lock_guard lock(mutex_);snapshot_=std::move(current);}
   }
-}) {}
-ApplyQueue::~ApplyQueue(){stopping_=true;SetEvent(wake_.get());if(worker_.joinable())worker_.join();}
+}) {
+  try {
+    preview_worker_=std::thread([this] {
+      std::uint64_t revision{};
+      while(!stopping_.load()) {
+        const bool active=GetTickCount64()<preview_until_.load();
+        WaitForSingleObject(preview_wake_.get(),active?16:500);
+        if(stopping_.load())return;
+        if(GetTickCount64()>=preview_until_.load())continue;
+        try {
+          if(const auto request=preview_request_.load())cosmetics::request_preview(request->selection,request->pose);
+          auto image=cosmetics::preview_image(revision);
+          if(image.revision && image.revision!=revision) {
+            revision=image.revision;preview_image_.store(std::make_shared<const cosmetics::PreviewImage>(std::move(image)));
+          }
+        } catch(const std::exception&) {
+          // Keep the last completed image through a transient read failure.
+        }
+      }
+    });
+  } catch(...) {stopping_=true;SetEvent(wake_.get());worker_.join();throw;}
+}
+ApplyQueue::~ApplyQueue(){stopping_=true;SetEvent(wake_.get());SetEvent(preview_wake_.get());if(worker_.joinable())worker_.join();if(preview_worker_.joinable())preview_worker_.join();}
 bool ApplyQueue::submit(const MenuState& requested,const std::string& context,bool load) {
   const auto written=written_.load(std::memory_order_relaxed);
   if(stopping_ || written-read_.load(std::memory_order_acquire)>=capacity)return false;
@@ -222,13 +253,15 @@ std::optional<ApplyResult> ApplyQueue::poll() {
   std::unique_lock lock(mutex_,std::try_to_lock);if(!lock || results_.empty())return {};
   auto result=std::move(results_.front());results_.pop_front();--pending_;if(!pending_)requested_=result.actual;return result;
 }
-void ApplyQueue::preview(const cosmetics::Selection& selection){
-  preview_until_=GetTickCount64()+800;
+void ApplyQueue::preview(const cosmetics::Selection& selection,const cosmetics::PreviewPose& pose){
+  const auto now=GetTickCount64();const bool resumed=preview_until_.exchange(now+800)<=now;
   const auto previous=preview_request_.load();
-  if(!previous || *previous!=selection){preview_request_.store(std::make_shared<const cosmetics::Selection>(selection));SetEvent(wake_.get());}
+  const cosmetics::PreviewRequest request{selection,pose};
+  if(!previous || *previous!=request){preview_request_.store(std::make_shared<const cosmetics::PreviewRequest>(request));SetEvent(preview_wake_.get());}
+  else if(resumed)SetEvent(preview_wake_.get());
 }
 void ApplyQueue::refresh(){refresh_=true;SetEvent(wake_.get());}
-std::optional<RuntimeSnapshot> ApplyQueue::snapshot(){std::unique_lock lock(mutex_,std::try_to_lock);if(!lock)return {};return snapshot_;}
+std::optional<RuntimeSnapshot> ApplyQueue::snapshot(){std::unique_lock lock(mutex_,std::try_to_lock);if(!lock)return {};auto current=snapshot_;current.preview=preview_image_.load();return current;}
 void publish_apply(MenuState& displayed,const ApplyResult& result){merge(result.before,result.requested,result.actual,displayed,true);displayed.cosmetics.revision=result.actual.cosmetics.revision;}
 void tick_bindings(MenuRuntime& state) {
   if(!state.apply_queue)return;

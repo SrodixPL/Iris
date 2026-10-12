@@ -1,11 +1,14 @@
 #pragma once
 #include "core/features/inventory/inventory.hpp"
 #include "core/features/inventory/music.hpp"
+#include "core/features/inventory/native_backend.hpp"
+#include "core/features/inventory/requests.hpp"
+#include "core/features/inventory/preview_receipts.hpp"
 #include "core/features/player/models.hpp"
 #include "core/features/player/sound_cue.hpp"
 #include "core/sdk/generated/client_bindings.hpp"
 #include "util/memory.hpp"
-#include "core/hooks/minhook.hpp"
+#include "core/hooks/inline_hook.hpp"
 #include "core/log.hpp"
 #include "core/render/renderer.hpp"
 #include "core/module.hpp"
@@ -15,6 +18,7 @@
 #include <intrin.h>
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cstdio>
 #include <cmath>
 #include <cstring>
@@ -48,13 +52,29 @@ struct NativePreview {
     std::uint64_t job{};
     bool constructed{}, failed{}, modality{}, retiring{};
     PreviewImage image;
+    sdk::preview::CameraSettings camera_settings;
+    PreviewPose pose,submitted_pose;
+    bool camera_supported{};
+    ULONGLONG camera_changed{},camera_retry{};
 };
 struct EnvironmentField { std::vector<std::byte> original, written; bool resource{}; };
 struct EnvironmentEntity { Address address{}; std::string kind; std::map<int,EnvironmentField> fields; bool dirty{}; };
 struct Runtime {
     std::recursive_mutex mutex;
     Configuration requested;
+    std::unique_ptr<inventory::NativeBackend> inventory_backend;
+    std::unique_ptr<inventory::OwnedItems> inventory_items;
+    using InventoryEquip=bool(__fastcall*)(void*,int,int,std::uint64_t);
+    std::unique_ptr<hooks::Hook> inventory_equip_guard;
+    InventoryEquip original_inventory_equip{};
+    Configuration inventory_accepted;
+    std::uint64_t inventory_revision{};
+    ULONGLONG inventory_poll{};
+    InventoryReceipt inventory_receipt;
+    std::string inventory_fault;
+    std::condition_variable_any inventory_ready;
     NativePreview preview;
+    PreviewReceipts preview_receipts;
     Environment environment;
     std::vector<std::uint32_t> weather_particles;
     Address weather_manager{}, weather_pawn{}, weather_chunks{};
@@ -217,6 +237,10 @@ void update_preview(Runtime& state);
 bool guarded_preview(Runtime* state);
 Runtime& runtime();
 void recover(Runtime& state);
+void update_owned_inventory(Runtime& state);
+bool __fastcall inventory_equip_hook(void* manager,int team,int slot,std::uint64_t id);
+void restore_inventory_views(Runtime& state);
+void restore_owned_inventory(Runtime& state);
 bool guarded_recover(Runtime* state);
 void __fastcall frame_hook(void* self, int stage);
 void bind(Runtime& state);

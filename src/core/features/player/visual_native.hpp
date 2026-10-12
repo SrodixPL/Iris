@@ -1,5 +1,5 @@
 #pragma once
-#include "core/hooks/minhook.hpp"
+#include "core/hooks/inline_hook.hpp"
 #include <array>
 #include <atomic>
 #include <cstdint>
