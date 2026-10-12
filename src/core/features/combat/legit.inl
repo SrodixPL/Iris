@@ -1,5 +1,44 @@
 // Included inside the reviewed command adapter context.
+bool smoke_obstructed(Vector eye,Vector point){
+    if(!finite(eye)||!finite(point))return true;
+    using Opacity=float(__fastcall*)(const Vector*,const Vector*,Vector*);
+    const float opacity=reinterpret_cast<Opacity>(state->client+binding_values::combat_smoke_opacity_rva)(&eye,&point,nullptr);
+    // A conservative visibility threshold, independent of smoke rendering.
+    return !std::isfinite(opacity)||opacity>=.1f;
+}
+bool apply_trigger(Address proto,Transaction& tx){
+    if(stopped||rage_active())return false;
+    const auto generation=aim_settings.load();if(!generation)return false;
+    const auto base_address=read_native<Address>(proto+binding_values::layout_proto_base);const auto base=read_native<Base>(base_address);
+    if(!base.buttons||!base.angles)return false;
+    for(auto i=state->trigger_plans.rbegin();i!=state->trigger_plans.rend();++i){
+        if(i->seed!=base.random_seed||i->tick!=base.tick||i->generation!=generation)continue;
+        const auto controller=read_native<Address>(state->client+cosmetics::bindings::local_controller);
+        if(!controller||read_native<std::uint32_t>(controller+state->f.pawn)!=i->pawn)return false;
+        const auto pawn=sdk::entity(state->client,i->pawn),weapon=sdk::entity(state->client,i->weapon),target=sdk::entity(state->client,i->target);
+        if(!pawn||!weapon||!target||read_native<int>(pawn+state->f.health)<=0||read_native<int>(target+state->f.health)<=0||read_native<bool>(target+state->f.immune)||read_native<std::uint8_t>(target+state->f.team)==read_native<std::uint8_t>(pawn+state->f.team))return false;
+        const auto services=read_native<Address>(pawn+state->f.services);
+        if(!services||read_native<std::uint32_t>(services+state->f.active)!=i->weapon)return false;
+        const auto settings=generation->resolve(read_native<std::uint16_t>(weapon+state->f.definition));if(!settings.trigger)return false;
+        const auto history=read_native<Repeated>(proto+binding_values::layout_proto_history);
+        if(history.size<=0||history.size>maximum_steps||history.capacity<history.size||history.capacity>4096||!history.rep||read_native<int>(history.rep)<history.size)return false;
+        for(int sample=history.size-1;sample>=0;--sample){
+            const auto entry=read_native<History>(read_native<Address>(history.rep+8+8*sample));
+            if(entry.header.vtable!=state->client+reviewed::history_vtable||entry.player_tick!=i->player_tick||entry.player_fraction!=i->player_fraction||!entry.messages[0])continue;
+            const auto view=read_native<Angles>(entry.messages[0]);
+            if(std::hypot(view.x-i->view.x,std::remainder(view.y-i->view.y,360.f))>.05f)continue;
+            auto buttons=read_native<Buttons>(base.buttons);buttons.value|=attack;buttons.changed|=attack;buttons.scroll&=~attack;buttons.has|=7;
+            tx.put(base.buttons,buttons);tx.put(proto+binding_values::layout_proto_attack_history,sample);
+            tx.put(proto+binding_values::layout_proto_presence,read_native<std::uint32_t>(proto+binding_values::layout_proto_presence)|0x20u);
+            checksum(base_address,base,buttons,read_native<Angles>(base.angles),tx);return true;
+        }
+        return false;
+    }
+    return false;
+}
 void reset_view() {
+    state->previous_camera_valid=false;state->acquisition_delay=state->trigger_delay=0;
+    state->trigger_plans.clear();
     legit_weapon_definition=0;
     state->legit_decision.reset();
     state->view_plan.reset();state->view_generation.reset();state->recoil={};state->locked_target=0;state->smooth_rates={};state->view_pawn=state->view_weapon=0;state->last_view={};state->shot_confirmation.reset();state->trigger_confirmation.reset();state->last_trigger={};
@@ -15,9 +54,10 @@ bool apply_view(Address proto,const ViewPlan& plan,Transaction* transient=nullpt
     if(!services||read_native<std::uint32_t>(services+state->f.active)!=plan.weapon_handle||sdk::entity(state->client,plan.weapon_handle)!=plan.weapon)return false;
     if(plan.target){
         const auto definition=read_native<std::int16_t>(plan.weapon+state->f.definition);const auto ls=plan.config.resolve(definition);
-        if(ls.aim_key&&!(GetAsyncKeyState(ls.aim_key)&0x8000))return false;
+        if(ls.activation==2&&(!ls.aim_key||!(GetAsyncKeyState(ls.aim_key)&0x8000)))return false;
         const auto target=sdk::entity(state->client,plan.target);
-        if(!target||read_native<int>(target+state->f.health)<=0||read_native<bool>(target+state->f.immune)||read_native<std::uint8_t>(target+state->f.team)==read_native<std::uint8_t>(plan.pawn+state->f.team)||!visible(plan.pawn,target,position(plan.pawn),plan.point))return false;
+        if(!target||read_native<int>(target+state->f.health)<=0||read_native<bool>(target+state->f.immune)||read_native<std::uint8_t>(target+state->f.team)==read_native<std::uint8_t>(plan.pawn+state->f.team)||(!ls.through_walls&&!visible(plan.pawn,target,position(plan.pawn),plan.point)))return false;
+        if(ls.smoke_check&&smoke_obstructed(position(plan.pawn),plan.point))return false;
     }
     const auto history=read_native<Repeated>(proto+binding_values::layout_proto_history);
     if(history.size!=static_cast<int>(plan.samples.size())||history.size<0||history.size>maximum_steps||history.capacity<history.size||history.capacity>4096||(history.size&&(!history.rep||read_native<int>(history.rep)<history.size)))return false;
@@ -94,16 +134,17 @@ void process_view(Address command,bool camera_frame=true) {
     const auto definition=loaded?read_native<std::int16_t>(weapon+f.definition):0;
     legit_weapon_definition=definition;
     const auto ls=config.resolve(definition);
-    const bool aim_key_held=ls.aim_key==0||(GetAsyncKeyState(ls.aim_key)&0x8000)!=0;
+    const bool aim_key_held=ls.activation!=2||(ls.aim_key!=0&&(GetAsyncKeyState(ls.aim_key)&0x8000)!=0);
     const bool aim_enabled=ls.enabled&&aim_key_held;
     const bool sniper=definition==9 || definition==11 || definition==38 || definition==40;
-    const bool blocked=(ls.pause_flashed && read_native<float>(pawn+f.flash)>0) || (sniper && ls.scoped_only && !read_native<bool>(pawn+f.scoped));
+    const bool blocked=(ls.pause_flashed && read_native<float>(pawn+f.flash)>0) || (ls.air_check&&!(read_native<std::uint32_t>(pawn+f.flags)&1)) || (sniper && ls.scoped_only && !read_native<bool>(pawn+f.scoped));
     const bool legit_active=loaded && camera_frame && !rage_active() && !using_item && !blocked && (ls.enabled||ls.recoil_control||ls.trigger);
     if(legit_active) {
         const auto punch=aim_punch(pawn);
         const Vector recoil_punch{punch.x*ls.recoil_vertical,punch.y*ls.recoil_horizontal,0};
-        sent=state->recoil.update(look,recoil_punch,firing && ls.recoil_control && ls.standalone_recoil,ls.recoil_strength);
-        if(aim_enabled && (!ls.on_fire || firing)) {
+        const Vector user=state->previous_camera_valid?Vector{look.x-state->previous_camera.x,std::remainder(look.y-state->previous_camera.y,360.f),0}:Vector{};
+        sent=state->recoil.update(look,recoil_punch,firing && ls.recoil_control && (ls.standalone_recoil||aim_enabled),ls.recoil_strength);
+        if(aim_enabled && (ls.aim_mode==1||ls.activation!=1||firing)) {
             const auto eye=position(pawn);const auto team=read_native<std::uint8_t>(pawn+f.team);float nearest=181;bool locked=false;int preference=-1;float best_score=-1;
             struct Candidate {std::uint32_t handle{};Address entity{};Vector point{};float angle{};int rank{};bool locked{};};
             std::vector<Candidate> chance_candidates;
@@ -118,15 +159,16 @@ void process_view(Address command,bool camera_frame=true) {
                     if(hitbox.secondary&&!ls.multipoint[hitbox.region])continue;
                     if(ls.only_body&&(hitbox.region==0||hitbox.region>=4))continue;
                     if(angular_distance(bullet(look,{}),hitbox.point-eye)>ls.effective_fov(camera_fov)*.5f)continue;
+                    if(ls.smoke_check){if(!visibility_budget.take())continue;if(smoke_obstructed(eye,hitbox.point))continue;}
                     const bool preferred=ls.target_lock && candidate_handle==state->locked_target;
                     // When both preferences are selected, both preferred regions
                     // compete by crosshair distance. Body-only remains a filter.
                     const int rank=(ls.prefer_head&&hitbox.region==0)||(ls.prefer_body&&hitbox.region>=1&&hitbox.region<=3)?1:0;
                     const auto distance=angular_distance(bullet(look,{}),hitbox.point-eye);
                     float score=0;
-                    if(ls.target_selection==1){if(!visibility_budget.take())continue;score=shot_damage(pawn,weapon,candidate,eye,hitbox.point,hitbox.region,false);if(score<=0)continue;}
+                    if(ls.target_selection==1){if(!visibility_budget.take())continue;score=shot_damage(pawn,weapon,candidate,eye,hitbox.point,hitbox.region,ls.through_walls);if(score<=0)continue;}
                     if(ls.target_selection!=0&&((locked&&!preferred)||(preferred==locked&&(rank<preference||(rank==preference&&(ls.target_selection==1?(score<best_score||(score==best_score&&distance>=nearest)):distance>=nearest))))))continue;
-                    if(ls.target_selection!=1){if(!visibility_budget.take())continue;if(!visible(pawn,candidate,eye,hitbox.point))continue;}
+                    if(ls.target_selection!=1){if(!visibility_budget.take())continue;if(ls.through_walls?shot_damage(pawn,weapon,candidate,eye,hitbox.point,hitbox.region,true)<=0:!visible(pawn,candidate,eye,hitbox.point))continue;}
                     if(ls.target_selection==0){
                         auto found=std::find_if(chance_candidates.begin(),chance_candidates.end(),[&](const auto& value){return value.handle==candidate_handle;});
                         if(found==chance_candidates.end())chance_candidates.push_back({candidate_handle,candidate,hitbox.point,distance,rank,preferred});
@@ -158,30 +200,35 @@ void process_view(Address command,bool camera_frame=true) {
                 }
             }
             const bool acquired=handle&&handle!=state->locked_target;
-            if(acquired){state->locked_target=handle;state->acquired=now;state->smooth_rates={};}
+            if(acquired){state->locked_target=handle;state->acquired=now;state->smooth_rates={};state->acquisition_delay=combat::sampled_delay(ls.reaction_time,ls.reaction_max,static_cast<std::uint32_t>(cmd.number)^handle^pawn_handle);}
             const auto elapsed=std::chrono::duration<float,std::milli>(now-state->acquired).count();
-            if(handle && elapsed>=ls.reaction_time&&(ls.aim_time==0||elapsed-ls.reaction_time<ls.aim_time)) {
+            if(handle && elapsed>=state->acquisition_delay) {
                 if(const auto desired=aim(eye,point)) {
                     const auto goal=ls.recoil_control?*desired-recoil_punch*ls.recoil_strength:*desired;
                     if(dt>0&&std::isfinite(dt)){
                         const float step_time=std::min(dt,.05f);const Vector delta{goal.x-sent.x,std::remainder(goal.y-sent.y,360.f),0};
                         Vector step{};
-                        if(ls.smoothing_type==0){
-                            if(state->smooth_rates.x==0&&state->smooth_rates.y==0)state->smooth_rates={std::max(1.f,std::abs(delta.x)/ls.smoothing),std::max(1.f,std::abs(delta.y)/ls.smoothing),0};
-                            step={std::copysign(std::min(std::abs(delta.x),state->smooth_rates.x*step_time*ls.smooth_pitch*.01f),delta.x),std::copysign(std::min(std::abs(delta.y),state->smooth_rates.y*step_time*ls.smooth_yaw*.01f),delta.y),0};
-                        }else step={delta.x*(-std::expm1(-step_time*ls.smooth_pitch*.01f/ls.smoothing)),delta.y*(-std::expm1(-step_time*ls.smooth_yaw*.01f/ls.smoothing)),0};
+                        if(ls.aim_mode==1)step=combat::assist_step(delta,user,ls.assist_strength,step_time,ls.effective_fov(camera_fov)*.5f);
+                        else {
+                            const float weight=ls.smoothing<=0?1.f:-std::expm1(-step_time/(.015f+.485f*ls.smoothing));
+                            step=delta*weight;
+                            const float amplitude=std::min(.025f,std::hypot(delta.x,delta.y)*.01f)*std::sqrt(step_time)*ls.smoothing;
+                            step.x+=combat::gaussian(static_cast<std::uint32_t>(cmd.number)^handle)*amplitude;
+                            step.y+=combat::gaussian(static_cast<std::uint32_t>(cmd.number)^handle^0x9e3779b9u)*amplitude;
+                            step=step*(1.f/(1.f+std::hypot(user.x,user.y)/(std::max(dt,.001f)*360.f)));
+                        }
                         const float magnitude=std::hypot(step.x,step.y),limit=ls.max_speed*step_time;if(magnitude>limit)step=step*(limit/magnitude);
                         sent=combat::clamp_angles(sent+step);assisted=true;legit_status="Aim assistance active";
                     }
                 }
-            } else {legit_status=handle?(elapsed<ls.reaction_time?"Waiting for target delay":"Target assistance duration reached"):"No visible target inside FOV";handle=0;}
+            } else {legit_status=handle?"Waiting for target delay":"No visible target inside FOV";handle=0;}
             if(!handle && !state->locked_target)state->acquired={};
             if(!handle && nearest==181)state->locked_target=0;
         } else {state->locked_target=0;legit_status=ls.enabled?(aim_key_held?"Waiting for fire":"Waiting for aim key"):"Recoil control only";}
     } else {state->recoil={};state->locked_target=0;legit_status=rage_active()?"Rage takes priority":"Disabled";}
     if(camera_frame && !rage_active() && loaded && !using_item) {
         const bool wants=firing || ls.trigger;
-        std::uint32_t confirmed{},trigger_confirmed{};
+        std::uint32_t confirmed{},trigger_confirmed{};bool trigger_seed_hit{};
         if(wants && !blocked && aim_enabled){
             const auto eye=position(pawn);const auto punch=aim_punch(pawn);TraceResult result;
             if(trace_ray(pawn,eye,eye+bullet(sent+Vector{punch.x,punch.y,0},{})*8192.f,result) && result.entity){
@@ -202,36 +249,59 @@ void process_view(Address command,bool camera_frame=true) {
             const auto eye=position(pawn),punch=aim_punch(pawn);const auto data=read_native<Address>(weapon+binding_values::layout_weapon_vdata);
             const float range=data?read_native<float>(data+f.range):0.f;int region=-1;Address entity{};
             const auto history=read_native<History>(read_native<Address>(cmd.history.rep+8+8*(cmd.history.size-1)));
-            if(std::isfinite(range)&&range>0&&history.header.vtable==state->client+reviewed::history_vtable&&(history.has&0x800)&&history.player_tick>0&&std::isfinite(history.player_fraction)&&history.player_fraction>=0&&history.player_fraction<1){
+            if(std::isfinite(range)&&range>0&&history.header.vtable==state->client+reviewed::history_vtable&&history.messages[0]&&(history.has&0x800)&&history.player_tick>0&&std::isfinite(history.player_fraction)&&history.player_fraction>=0&&history.player_fraction<1){
+                const auto sample_angles=read_native<Angles>(history.messages[0]);
+                const auto firing_view=combat::clamp_angles(Vector{sample_angles.x,sample_angles.y,0}+Vector{sent.x-look.x,std::remainder(sent.y-look.y,360.f),0});
                 using Inaccuracy=float(__fastcall*)(Address,float*,float*);using BaseSpread=float(__fastcall*)(Address);
                 using Seed=std::uint32_t(__fastcall*)(Address,const Vector*,int);
                 using Spread=void(__fastcall*)(std::int16_t,int,int,std::uint32_t,float,float,float,float*,float*);
                 state->native_stage="Legit trigger accuracy";
                 const float accuracy=reinterpret_cast<Inaccuracy>(state->client+inaccuracy_rva)(weapon,nullptr,nullptr),spread=reinterpret_cast<BaseSpread>(state->client+base_spread_rva)(weapon),recoil=read_native<float>(weapon+f.recoil);
-                Vector direction{};
+                Vector direction{},seed_direction{};
                 if(std::isfinite(accuracy)&&accuracy>=0&&std::isfinite(spread)&&spread>=0&&std::isfinite(recoil)){
-                    state->native_stage="Legit trigger spread";const auto seed=reinterpret_cast<Seed>(state->client+seed_rva)(0,&sent,history.player_tick);Vector offset{};
+                    state->native_stage="Legit trigger spread";const auto seed=reinterpret_cast<Seed>(state->client+seed_rva)(0,&firing_view,history.player_tick);Vector offset{};
                     reinterpret_cast<Spread>(state->client+spread_rva)(static_cast<std::int16_t>(definition),1,0,seed+1,accuracy,spread,recoil,&offset.x,&offset.y);
-                    direction=bullet(sent+Vector{punch.x,punch.y,0},offset);
+                    seed_direction=bullet(firing_view+Vector{punch.x,punch.y,0},offset);
+                    direction=bullet(firing_view+Vector{punch.x,punch.y,0},{});
                 }
                 const auto damage=finite(direction)&&length(direction)>.5f?shot_damage(pawn,weapon,0,eye,eye+direction*(range*.999f),-1,ls.trigger_visibility==1,&region,&entity):0.f;
                 if(damage>0&&damage>=ls.trigger_minimum_damage&&region>=0&&region<static_cast<int>(ls.trigger_hitboxes.size())&&ls.trigger_hitboxes[region]){
                     for(int i=1;i<=64;++i){const auto other=controller_at(i);if(!other)continue;const auto candidate=read_native<std::uint32_t>(other+f.player_pawn);if(sdk::entity(state->client,candidate)==entity){trigger_confirmed=candidate;break;}}
+                    if(trigger_confirmed&&ls.trigger_smoke){const auto target_eye=position(entity);const auto endpoint=eye+direction*length(target_eye-eye);if(smoke_obstructed(eye,endpoint))trigger_confirmed=0;}
+                    if(trigger_confirmed&&finite(seed_direction)&&length(seed_direction)>.5f){int hit=-1;Address contacted{};
+                        const auto amount=shot_damage(pawn,weapon,entity,eye,eye+seed_direction*(range*.999f),-1,ls.trigger_visibility==1,&hit,&contacted);
+                        trigger_seed_hit=contacted==entity&&amount>=ls.trigger_minimum_damage&&hit>=0&&hit<6&&ls.trigger_hitboxes[hit];
+                    }
+                    if(trigger_confirmed&&ls.trigger_hit_chance>0){
+                        const bool chance=combat::chance_passes(ls.trigger_hit_chance,[&](int sample){
+                            Vector offset{};reinterpret_cast<Spread>(state->client+spread_rva)(static_cast<std::int16_t>(definition),1,0,static_cast<std::uint32_t>(sample+1),accuracy,spread,recoil,&offset.x,&offset.y);
+                            const auto ray=bullet(firing_view+Vector{punch.x,punch.y,0},offset);int hit=-1;Address contacted{};
+                            const auto amount=shot_damage(pawn,weapon,entity,eye,eye+ray*(range*.999f),-1,ls.trigger_visibility==1,&hit,&contacted);
+                            return contacted==entity&&amount>=ls.trigger_minimum_damage&&hit>=0&&hit<6&&ls.trigger_hitboxes[hit];
+                        },32);
+                        if(!chance)trigger_confirmed=0;
+                    }
                 }
             }
         }
         if(ls.trigger&&pellets!=1)legit_status="Shotgun Trigger unavailable";
-        const bool trigger_ready=state->trigger_confirmation.ready(trigger_blocked?0:trigger_confirmed,std::chrono::duration<double,std::milli>(now.time_since_epoch()).count(),ls.trigger_reaction+delay);
+        if(trigger_confirmed&&state->trigger_confirmation.target!=trigger_confirmed)state->trigger_delay=combat::sampled_delay(ls.trigger_reaction,ls.trigger_reaction_max,static_cast<std::uint32_t>(cmd.number)^trigger_confirmed^0x63d83595u);
+        const bool trigger_ready=state->trigger_confirmation.ready(trigger_blocked?0:trigger_confirmed,std::chrono::duration<double,std::milli>(now.time_since_epoch()).count(),state->trigger_delay+delay);
         const bool interval_ready=!state->last_trigger.time_since_epoch().count()||std::chrono::duration<float,std::milli>(now-state->last_trigger).count()>=ls.trigger_interval;
         if(cmd.history.size>0){
             if(aim_enabled&&firing&&(delay>0||blocked)&&!ready){firing_intent(command,cmd,base,false);firing=false;legit_status=blocked?"Assistance paused":"Waiting for shot confirmation";}
-            else if(trigger_ready&&interval_ready&&!firing&&ls.trigger){
+            else if(trigger_ready&&trigger_seed_hit&&interval_ready&&!firing&&ls.trigger){
                 const auto history=read_native<History>(read_native<Address>(cmd.history.rep+8+8*(cmd.history.size-1)));
                 const int next=read_native<int>(weapon+f.next);const float fraction=read_native<float>(weapon+f.ratio);
-                if(history.header.vtable==state->client+reviewed::history_vtable&&std::isfinite(history.player_fraction)&&history.player_fraction>=0&&history.player_fraction<1&&std::isfinite(fraction)&&fraction>=0&&fraction<1&&(history.player_tick>next||(history.player_tick==next&&history.player_fraction>=fraction))){firing_intent(command,cmd,base,true);firing=true;state->last_trigger=now;}
+                if(history.header.vtable==state->client+reviewed::history_vtable&&std::isfinite(history.player_fraction)&&history.player_fraction>=0&&history.player_fraction<1&&std::isfinite(fraction)&&fraction>=0&&fraction<1&&(history.player_tick>next||(history.player_tick==next&&history.player_fraction>=fraction))){
+                    const auto sample_angles=read_native<Angles>(history.messages[0]);const auto shot_view=combat::clamp_angles(Vector{sample_angles.x,sample_angles.y,0}+Vector{sent.x-look.x,std::remainder(sent.y-look.y,360.f),0});
+                    state->trigger_plans.push_back({base.random_seed,base.tick,history.player_tick,history.player_fraction,pawn_handle,weapon_handle,trigger_confirmed,shot_view,snapshot});if(state->trigger_plans.size()>150)state->trigger_plans.pop_front();
+                    firing_intent(command,cmd,base,true);firing=true;state->last_trigger=now;
+                }
             }
         }
     }
+    state->previous_camera=sent;state->previous_camera_valid=true;
     const auto delta=Vector{sent.x-look.x,std::remainder(sent.y-look.y,360.f),0};
     if(!assisted && length(delta)<1e-6f)return;
     ViewPlan plan{base.random_seed,base.tick,pawn,weapon,handle,point,sent,delta,config,rage_active()};

@@ -1239,12 +1239,58 @@ bool slider(const char* id,const char* label,float& value,float min,float max,fl
 bool percent(const char* id,const char* label,float& value,bool compact,ImGuiID binding) {
   return slider_value(id,label,value,0.f,1.f,0.f,"%.0f%%",false,true,compact,false,nullptr,binding,100.f);
 }
+bool range_slider(const char* id,const char* label,float& lower,float& upper,float minimum,float maximum,float gap,bool disabled,bool compact) {
+  const float s=scale();
+  if(!std::isfinite(minimum)||!std::isfinite(maximum)||!std::isfinite(gap)||gap<=0||maximum-minimum<gap)return false;
+  const float old_lower=lower,old_upper=upper;
+  lower=std::clamp(std::isfinite(lower)?lower:minimum,minimum,maximum-gap);
+  upper=std::clamp(std::isfinite(upper)?upper:maximum,lower+gap,maximum);
+  Row row(id,label,std::min(theme::setting_control*s,ImGui::GetContentRegionAvail().x),disabled,compact,0);
+  const auto p=ImGui::GetCursorScreenPos();
+  const float value_width=theme::value_width_max*s;
+  const float width=std::max(32.f*s,std::min(theme::setting_control*s,row.width)-value_width-theme::setting_gap*s);
+  const float radius=theme::slider_thumb*s,left=p.x+radius,right=p.x+width-radius;
+  const float y=p.y+theme::input_height*s*.5f;
+  const auto position=[&](float value){return left+(right-left)*(value-minimum)/(maximum-minimum);};
+  // One track, two keyboard-selectable handles. The stored choice stays
+  // stable throughout a drag, including when the handles are nearly adjacent.
+  widgets::button("##range_track",{width,theme::input_height*s},ImGuiButtonFlags_NoHoveredOnFocus);
+  auto* storage=ImGui::GetStateStorage();const auto active=ImGui::GetID("##range_handle");
+  if(!disabled&&ImGui::IsItemActivated())storage->SetInt(active,std::abs(ImGui::GetIO().MousePos.x-position(lower))<=std::abs(ImGui::GetIO().MousePos.x-position(upper))?0:1);
+  if(!disabled&&ImGui::IsItemActive()&&ImGui::IsMouseDown(0)){
+    const float value=std::round(minimum+std::clamp((ImGui::GetIO().MousePos.x-left)/(right-left),0.f,1.f)*(maximum-minimum));
+    if(storage->GetInt(active)==0)lower=std::clamp(value,minimum,upper-gap);else upper=std::clamp(value,lower+gap,maximum);
+  }
+  if(!disabled&&ImGui::IsItemFocused()){
+    if(ImGui::IsKeyPressed(ImGuiKey_UpArrow))storage->SetInt(active,1);
+    if(ImGui::IsKeyPressed(ImGuiKey_DownArrow))storage->SetInt(active,0);
+    const int direction=ImGui::IsKeyPressed(ImGuiKey_RightArrow)?1:ImGui::IsKeyPressed(ImGuiKey_LeftArrow)?-1:0;
+    if(storage->GetInt(active)==0)lower=std::clamp(lower+direction,minimum,upper-gap);else upper=std::clamp(upper+direction,lower+gap,maximum);
+  }
+  auto* draw=ImGui::GetWindowDrawList();draw->AddLine({left,y},{right,y},ImGui::GetColorU32(theme::rail),theme::slider_track*s);
+  draw->AddLine({position(lower),y},{position(upper),y},ImGui::GetColorU32(theme::accent),theme::slider_track*s);
+  draw->AddCircleFilled({position(lower),y},radius,ImGui::GetColorU32(theme::text),24);
+  draw->AddCircleFilled({position(upper),y},radius,ImGui::GetColorU32(theme::text),24);
+  if(ImGui::IsItemHovered())ImGui::SetTooltip("%.0f - %.0f ms",lower,upper);
+  // Keyboard/text editing shares the track row, with no second slider.
+  ImGui::SameLine(0,theme::setting_gap*s);char display[72]{};std::snprintf(display,sizeof(display),"%.0f-%.0f###range_display",lower,upper);
+  if(widgets::button(display,{value_width,theme::input_height*s}))ImGui::OpenPopup("range_values");
+  const auto anchor=last_bounds();
+  if(begin_popup("range_values",anchor,theme::popup_width,110,"Delay",true)){
+    ImGui::SetNextItemWidth(-1);float low=lower,high=upper;
+    if(ImGui::InputFloat("Minimum##minimum",&low,0,0,"%.0f ms"))lower=std::clamp(std::isfinite(low)?std::round(low):lower,minimum,upper-gap);
+    ImGui::SetNextItemWidth(-1);
+    if(ImGui::InputFloat("Maximum##maximum",&high,0,0,"%.0f ms"))upper=std::clamp(std::isfinite(high)?std::round(high):upper,lower+gap,maximum);
+    end_popup();
+  }
+  return old_lower!=lower||old_upper!=upper;
+}
 bool slider(const char* id,const char* label,int& value,int min,int max,int step,const char* format,bool disabled,bool hotkey_enabled,bool compact,ImGuiID binding) {
   return slider_value(id,label,value,min,max,step,format,disabled,hotkey_enabled,compact,false,nullptr,binding);
 }
-bool combo(const char* id,const char* label,int& selected,std::span<const Option> options,bool disabled,const PopupContents* settings,bool hotkey_enabled,bool compact,ImGuiID binding_id) {
+bool combo(const char* id,const char* label,int& selected,std::span<const Option> options,bool disabled,const PopupContents* settings,bool hotkey_enabled,bool compact,ImGuiID binding_id,const ColorAffordance* color) {
   const float s=scale();
-  const float extra=(settings ? theme::more_width+theme::setting_gap : 0)*s;
+  const float extra=(settings||color ? theme::more_width+theme::setting_gap : 0)*s;
   const float control_width=std::max(28*s,std::min(theme::setting_control*s,ImGui::GetContentRegionAvail().x-extra));
   Row row(id,label,control_width+extra,disabled || options.empty(),compact,binding_id);
   const auto hotkey_id=binding_id ? binding_id : ImGui::GetID("hotkeys");
@@ -1253,6 +1299,8 @@ bool combo(const char* id,const char* label,int& selected,std::span<const Option
   double bound_value=selected;
   const bool bound=hotkey_enabled && hotkeys::evaluate(hotkey_id,bound_value,disabled || options.empty());
   if(bound) selected=static_cast<int>(bound_value);
+  bool changed=false;
+  if(color){changed|=color_control(label,color->color,color->editor,color->palette,disabled||options.empty(),color->alpha,theme::more_width*s);ImGui::SameLine(0,theme::setting_gap*s);}
   settings_action(settings);
   ImGui::PushStyleColor(ImGuiCol_Button,theme::raised);
   const bool clicked=widgets::button("##value",{control_width,theme::input_height*s},ImGuiButtonFlags_NoHoveredOnFocus);
@@ -1261,7 +1309,6 @@ bool combo(const char* id,const char* label,int& selected,std::span<const Option
   const char* current=selected>=0 && selected<static_cast<int>(options.size()) ? options[selected].label : "Select";
   field_text(current,anchor,disabled);
   if(clicked) ImGui::OpenPopup("options");
-  bool changed=false;
   const float height=theme::popup_padding*2+std::min(static_cast<float>(options.size()),theme::popup_rows)*theme::option_height;
   if(begin_popup("options",anchor,dropdown_width(anchor),height,nullptr,false,true,false,false)) {
     for(size_t i=0;i<options.size();++i) {

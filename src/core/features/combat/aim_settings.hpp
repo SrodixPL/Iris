@@ -20,6 +20,9 @@ struct LegitSettings {
     int trigger_visibility{};
     // Zero preserves the pre-key behavior; a bound virtual key is a hold gate.
     int aim_key{};
+    int aim_mode{},activation{1};
+    bool through_walls{},smoke_check{true},air_check{},trigger_smoke{true};
+    float assist_strength{.5f},reaction_max{150},trigger_reaction_max{100},trigger_hit_chance{50};
     int radius_type{},smoothing_type{1},target_selection{2};
     float aim_time{},smooth_pitch{100},smooth_yaw{100};
     float fov{5},smoothing{.18f},max_speed{180},reaction_time{100},recoil_strength{1},shot_delay{},sniper_delay{120},recoil_horizontal{1},recoil_vertical{1};
@@ -31,6 +34,11 @@ struct LegitSettings {
     bool operator==(const LegitSettings&) const=default;
 };
 enum class LegitCategory : std::size_t { Pistols,HeavyPistols,Rifles,Smgs,Shotguns,Snipers,MachineGuns,Count };
+inline void normalize_delays(LegitSettings& value) noexcept {
+    value.reaction_time=std::clamp(value.reaction_time,0.f,499.f);value.reaction_max=std::clamp(value.reaction_max,value.reaction_time+1.f,500.f);
+    value.trigger_reaction=std::clamp(value.trigger_reaction,0.f,999.f);value.trigger_reaction_max=std::clamp(value.trigger_reaction_max,value.trigger_reaction+1.f,1000.f);
+    if(value.aim_mode==1&&value.activation==1)value.activation=0;
+}
 inline constexpr const char* legit_category_names[]{"Pistols","Heavy pistols","Rifles","SMGs","Shotguns","Snipers","Machine guns"};
 struct LegitWeapon {int definition;const char* name;LegitCategory category;};
 // Definition identities are already present in the shipped schema catalog.
@@ -135,12 +143,20 @@ inline constexpr const char* legit_visibility_names[]{"Visible only","Allow pene
 inline constexpr const char* legit_radius_names[]{"Static angle","Dynamic screen radius (90 deg reference)"};
 inline constexpr const char* legit_smoothing_names[]{"Linear","Exponential"};
 inline constexpr const char* legit_selection_names[]{"Hit chance","Highest damage","Nearest to crosshair"};
+inline constexpr const char* aim_mode_names[]{"Smooth","Assist"};
+inline constexpr const char* activation_names[]{"Always","On fire","Keybind"};
 inline constexpr Choice<LegitSettings> legit_choices[]{
+    {"aim_mode","Mode",&LegitSettings::aim_mode,aim_mode_names},
+    {"activation","Activation",&LegitSettings::activation,activation_names},
     {"trigger_visibility","Trigger visibility",&LegitSettings::trigger_visibility,legit_visibility_names},
     {"radius_type","Radius type",&LegitSettings::radius_type,legit_radius_names},
     {"smoothing_type","Smooth type",&LegitSettings::smoothing_type,legit_smoothing_names},
     {"target_selection","Target selection",&LegitSettings::target_selection,legit_selection_names}};
 inline constexpr Toggle<LegitSettings> legit_toggles[]{
+    {"through_walls","Through walls",&LegitSettings::through_walls},
+    {"smoke_check","Smoke check",&LegitSettings::smoke_check},
+    {"air_check","Air check",&LegitSettings::air_check},
+    {"trigger_smoke","Trigger: smoke check",&LegitSettings::trigger_smoke},
     {"enabled","Aim assistance",&LegitSettings::enabled},{"on_fire","Aim while holding fire",&LegitSettings::on_fire},
     {"target_lock","Keep current target",&LegitSettings::target_lock},
     {"visualize_fov","Visualize FOV",&LegitSettings::visualize_fov},{"recoil_control","Recoil correction",&LegitSettings::recoil_control},
@@ -156,22 +172,26 @@ inline constexpr Toggle<LegitSettings> legit_toggles[]{
     {"trigger_air","Trigger: air check",&LegitSettings::trigger_air}};
 inline constexpr Number<LegitSettings> legit_numbers[]{
     {"fov","FOV",&LegitSettings::fov,1,30,"%.0f deg"},
-    {"smoothing","Aim smoothing",&LegitSettings::smoothing,.05f,1,"%.2f s"},
+    {"smoothing","Smoothing",&LegitSettings::smoothing,0,1,"%.2f"},
+    {"assist_strength","Assist strength",&LegitSettings::assist_strength,0,1,"%.2f"},
+    {"reaction_max","Maximum engagement delay",&LegitSettings::reaction_max,1,500,"%.0f ms"},
+    {"trigger_reaction_max","Maximum trigger delay",&LegitSettings::trigger_reaction_max,1,1000,"%.0f ms"},
+    {"trigger_hit_chance","Hit chance",&LegitSettings::trigger_hit_chance,0,100,"%.0f%%"},
     {"max_speed","Turn speed (deg/s)",&LegitSettings::max_speed,30,720,"%.0f"},
-    {"reaction_time","Target acquisition delay",&LegitSettings::reaction_time,0,500,"%.0f ms"},
+    {"reaction_time","Target acquisition delay",&LegitSettings::reaction_time,0,499,"%.0f ms"},
     {"recoil_strength","Overall amount",&LegitSettings::recoil_strength,0,1,"%.2f"},
     {"shot_delay","Shot confirmation delay",&LegitSettings::shot_delay,0,500,"%.0f ms"},
     {"sniper_delay","Sniper confirmation delay",&LegitSettings::sniper_delay,0,500,"%.0f ms"},
     {"recoil_horizontal","Side-to-side correction",&LegitSettings::recoil_horizontal,0,1,"%.2f"},
     {"recoil_vertical","Up-and-down correction",&LegitSettings::recoil_vertical,0,1,"%.2f"},
     {"trigger_interval","Delay between shots",&LegitSettings::trigger_interval,0,1000,"%.0f ms"},
-    {"trigger_reaction","Trigger reaction time",&LegitSettings::trigger_reaction,0,1000,"%.0f ms"},
+    {"trigger_reaction","Trigger reaction time",&LegitSettings::trigger_reaction,0,999,"%.0f ms"},
     {"trigger_minimum_damage","Trigger minimum damage",&LegitSettings::trigger_minimum_damage,0,130,"%.0f HP"},
     {"aim_time","Aim duration (0 = unlimited)",&LegitSettings::aim_time,0,1000,"%.0f ms"},
     {"smooth_pitch","Smooth pitch (0 = disabled)",&LegitSettings::smooth_pitch,0,100,"%.0f%%"},
     {"smooth_yaw","Smooth yaw (0 = disabled)",&LegitSettings::smooth_yaw,0,100,"%.0f%%"}};
 inline void validate(const Settings& s) {
-    const auto check=[](const LegitSettings& value){if(value.aim_key<0||value.aim_key>255)throw std::invalid_argument("Legit aim key is outside its supported range.");for(const auto& n:legit_numbers)if(!std::isfinite(value.*n.member)||value.*n.member<n.low||value.*n.member>n.high)throw std::invalid_argument("Legit aim setting is outside its supported range.");for(const auto& c:legit_choices)if(value.*c.member<0||value.*c.member>=static_cast<int>(c.names.size()))throw std::invalid_argument("Legit choice is outside its supported range.");};
+    const auto check=[](const LegitSettings& value){if(value.reaction_max-value.reaction_time<1||value.trigger_reaction_max-value.trigger_reaction<1)throw std::invalid_argument("Delay endpoints must be at least one millisecond apart.");if(value.aim_key<0||value.aim_key>255)throw std::invalid_argument("Legit aim key is outside its supported range.");for(const auto& n:legit_numbers)if(!std::isfinite(value.*n.member)||value.*n.member<n.low||value.*n.member>n.high)throw std::invalid_argument("Legit aim setting is outside its supported range.");for(const auto& c:legit_choices)if(value.*c.member<0||value.*c.member>=static_cast<int>(c.names.size()))throw std::invalid_argument("Legit choice is outside its supported range.");};
     check(s.legit);
     if(s.profile_sets.size()>32)throw std::invalid_argument("Too many Legit profile sets.");
     bool has_default=s.profile_sets.empty(),has_selected=s.profile_sets.empty();

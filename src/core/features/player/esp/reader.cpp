@@ -90,7 +90,24 @@ void update_player_visuals(Runtime& s) {
     const auto chunks=memory::read<Address>(s.client+bindings::entity_chunks).value_or(0),chunk=chunks?memory::read<Address>(chunks).value_or(0):0;
     if(!chunk){clear();return;}
     auto effects=std::make_shared<visuals::native::Frame>();effects->sampled=next->sampled;
+    const auto first_person=[&](std::uint32_t handle,const std::array<float,4>& color){
+        const auto object=entity(s,handle);if(!object)return;
+        const auto entity_chunk=memory::read<Address>(chunks+((handle&0x7fff)>>9)*sizeof(Address)).value_or(0);if(!entity_chunk)return;
+        visuals::native::Target target;target.pawn=object;target.identity=entity_chunk+(handle&0x1ff)*sizeof(EntityIdentity);target.handle=handle;
+        const auto flags=memory::read<std::uint32_t>(target.identity+sdk::binding_values::layout_identity_flags).value_or(0);
+        target.scene_handle=(((handle>>15)-(flags&1))<<15)|(handle&0x7fff);
+        const int style=std::clamp(config.first_person_material,0,5);constexpr int styles[]{0,4,1,3,5,6};
+        target.chams=target.visible_chams=true;target.visible_styles=1<<style;target.visible_color=color;
+        effects->layer_materials[style]=visuals::native::prepare_materials(styles[style]);effects->targets.push_back(target);
+    };
+    if(config.hands_chams)first_person(field<std::uint32_t>(s,local,"C_CSPlayerPawn","m_hHudModelArms",0xffffffff),config.hands_chams_color);
+    if(config.weapon_chams){
+        const auto services=field<Address>(s,local,"C_BasePlayerPawn","m_pWeaponServices");
+        const auto weapon=entity(s,field<std::uint32_t>(s,services,"CPlayer_WeaponServices","m_hActiveWeapon",0xffffffff));
+        if(weapon)first_person(field<std::uint32_t>(s,weapon,"C_EconEntity","m_hViewmodelAttachment",0xffffffff),config.weapon_chams_color);
+    }
     if(config.chams)effects->materials=visuals::native::prepare_materials(config.chams_material);
+    if(config.chams){constexpr int styles[]{0,4,1,3,5,6};for(unsigned i=0;i<6;++i)effects->layer_materials[i]=visuals::native::prepare_materials(styles[i]);}
     std::set<std::uint32_t> active_sounds;
     for(unsigned i=1;i<=64;++i)try {
         const auto identity=memory::read<EntityIdentity>(chunk+i*sizeof(EntityIdentity));
@@ -143,14 +160,15 @@ void update_player_visuals(Runtime& s) {
         if((config.glow||config.chams)&&p.enemy){
             const int glow=environment_offset(s,"C_BaseModelEntity","m_Glow");
             const auto pawn_chunk=memory::read<Address>(chunks+((pawn_handle&0x7fff)>>9)*sizeof(Address)).value_or(0);
-            if(glow>=0&&pawn_chunk){
-                visuals::native::Target target{pawn,pawn_chunk+(pawn_handle&0x1ff)*sizeof(EntityIdentity),pawn+glow,pawn_handle,p.visible?config.enemy_color:config.hidden_color};
+            if(pawn_chunk){
+                visuals::native::Target target{pawn,pawn_chunk+(pawn_handle&0x1ff)*sizeof(EntityIdentity),glow>=0?pawn+glow:0,pawn_handle,config.glow_color};
                 const auto flags=memory::read<std::uint32_t>(target.identity+sdk::binding_values::layout_identity_flags).value_or(0);
                 target.scene_handle=(((pawn_handle>>15)-(flags&1))<<15)|(pawn_handle&0x7fff);
-                target.glow_enabled=config.glow&&p.distance<=config.max_distance&&(!config.visible_only||p.visible);target.chams=config.chams&&p.distance<=config.chams_max_distance;
+                target.glow_enabled=glow>=0&&config.glow&&p.distance<=config.max_distance&&(!config.visible_only||p.visible);target.chams=config.chams&&p.distance<=config.chams_max_distance;
                 target.visible_chams=config.chams_visible||config.chams_visible_only;target.hidden_chams=!config.chams_visible_only;
                 target.original_material=config.chams_material==2;
                 target.visible_color=config.chams_color;target.hidden_color=config.chams_hidden_color;
+                target.visible_styles=config.visible_styles;target.hidden_styles=config.hidden_styles;
                 target.visible_color[3]*=config.chams_opacity;target.hidden_color[3]*=config.chams_opacity;
                 effects->targets.push_back(target);
             }

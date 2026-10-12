@@ -15,6 +15,7 @@ namespace iris::ui::legit_profiles {
 namespace {
 struct Path {const char* key;const char* path;};
 constexpr Path toggle_paths[]{
+    {"through_walls","Combat/Legit/Aim assist/Through walls"},{"smoke_check","Combat/Legit/Aim assist/Smoke check"},{"air_check","Combat/Legit/Aim assist/Air check"},{"trigger_smoke","Combat/Legit/Triggerbot/Smoke check"},
     {"enabled","Combat/Legit/Aim assist/Enable"},{"on_fire","Combat/Legit/Aim assist/Only while firing"},
     {"target_lock","Combat/Legit/Aim assist/Keep current target"},{"visualize_fov","Combat/Legit/Aim assist/Draw FOV"},
     {"recoil_control","Combat/Legit/RCS"},{"standalone_recoil","Combat/Legit/RCS/Standalone"},
@@ -27,6 +28,7 @@ constexpr Path toggle_paths[]{
     {"trigger_flash","Combat/Legit/Triggerbot/Flash check"},
     {"trigger_air","Combat/Legit/Triggerbot/Air check"}};
 constexpr Path number_paths[]{
+    {"assist_strength","Combat/Legit/Aim assist/Assist strength"},{"reaction_max","Combat/Legit/Aim assist/Maximum delay"},{"trigger_reaction_max","Combat/Legit/Triggerbot/Maximum delay"},{"trigger_hit_chance","Combat/Legit/Triggerbot/Hit chance"},
     {"fov","Combat/Legit/Aim assist/Aim/Radius"},{"smoothing","Combat/Legit/Aim assist/Aim/Smoothing"},
     {"max_speed","Combat/Legit/Aim assist/Aim/Turn speed"},{"reaction_time","Combat/Legit/Aim assist/Target acquisition delay"},
     {"recoil_strength","Combat/Legit/RCS/Overall amount"},{"shot_delay","Combat/Legit/Triggerbot/Shot delay"},
@@ -43,6 +45,7 @@ constexpr const char* trigger_hitbox_path="Combat/Legit/Triggerbot/Hit groups";
 constexpr const char* multipoint_path="Combat/Legit/Aim assist/Aim/Multipoint";
 constexpr const char* aim_key_path="Combat/Legit/Aim assist/Aim key";
 constexpr Path choice_paths[]{
+    {"aim_mode","Combat/Legit/Aim assist/Mode"},{"activation","Combat/Legit/Aim assist/Activation"},
     {"trigger_visibility","Combat/Legit/Triggerbot/Visible mode"},
     {"radius_type","Combat/Legit/Aim assist/Aim/Radius type"},
     {"smoothing_type","Combat/Legit/Aim assist/Aim/Smooth type"},
@@ -128,6 +131,7 @@ bool synchronize_hotkeys(MenuRuntime& state) {
         clear(binding(multipoint_path));
         clear(binding("Combat/Legit/Aim assist/Conditions"));
         clear(binding("Combat/Legit/Triggerbot/Conditions"));
+        clear(binding("Combat/Legit/Aim assist/Checks"));clear(binding("Combat/Legit/Triggerbot/Checks"));
     }
     hotkey_context.owner=&state;hotkey_context.profile=model.selected_profile;hotkey_context.loading=state.startup_loading;
     hotkey_context.frame=hotkeys::option(binding(number_path("fov"))).frame;
@@ -224,20 +228,27 @@ void render(MenuRuntime& state) {
             if(!matches(state,path,label))return false;
             ImGui::PushID(path);const bool edited=widgets::multi_combo("value",label,selected,choices,label,disabled,nullptr,global,global?binding(path):0);reveal(state,path);ImGui::PopID();return edited;
         };
-        const auto planned=[&](const char* path,const char* label){if(matches(state,path,label)){float inert{};ImGui::PushID(path);widgets::slider("value",label,inert,0,100,0,"%.0f",true,false,true);reveal(state,path);ImGui::PopID();}};
         constexpr widgets::Option hitboxes[]{{"Head"},{"Chest"},{"Stomach"},{"Pelvis"},{"Arms"},{"Legs"}};
         if(widgets::begin_group("legit_aim","Aimbot")){
             changed|=toggle(state,*value,"enabled",blocked,global);
             const bool inactive=blocked||!value->enabled;
-            std::array conditions{value->on_fire,value->pause_flashed};
-            constexpr widgets::Option checks[]{{"Only while firing"},{"Pause while flashed"}};
-            if(multi("Combat/Legit/Aim assist/Conditions","Conditions",conditions,checks,inactive)){value->on_fire=conditions[0];value->pause_flashed=conditions[1];changed=true;}
+            changed|=choice(state,*value,"aim_mode",inactive,global);
+            constexpr widgets::Option mode_activations[]{{"Always"},{"On fire"},{"Keybind"}};
+            struct ActivationKey {combat::LegitSettings* value;bool* changed;bool disabled;};
+            ActivationKey key_context{value,&changed,inactive};
+            const widgets::PopupContents key_popup{"Keybind",[](void* data){auto& context=*static_cast<ActivationKey*>(data);auto key=imgui_key(context.value->aim_key);if(widgets::key_row("aim_activation_key","Keybind",key,context.disabled)){context.value->aim_key=virtual_key(key);*context.changed=true;}},&key_context,90,state.search_reveal_pending&&state.search_target==aim_key_path};
+            if(value->aim_mode==1&&value->activation==1){value->activation=0;changed=true;}
+            if(value->aim_mode==1){constexpr widgets::Option choices[]{{"Always"},{"Keybind"}};int selected=value->activation==2?1:0;if(widgets::combo("activation","Activation",selected,choices,inactive,value->activation==2?&key_popup:nullptr,false,true)){value->activation=selected?2:0;value->on_fire=false;changed=true;}}
+            else if(widgets::combo("activation","Activation",value->activation,mode_activations,inactive,value->activation==2?&key_popup:nullptr,false,true)){value->on_fire=value->activation==1;changed=true;}
+            std::array conditions{value->pause_flashed,value->smoke_check,value->air_check};
+            constexpr widgets::Option checks[]{{"Flash"},{"Smoke"},{"Air"}};
+            if(multi("Combat/Legit/Aim assist/Checks","Checks",conditions,checks,inactive)){value->pause_flashed=conditions[0];value->smoke_check=conditions[1];value->air_check=conditions[2];changed=true;}
+            changed|=toggle(state,*value,"through_walls",inactive,global);
             changed|=multi(hitbox_path,"Hitboxes",value->hitboxes,hitboxes,inactive);
             changed|=number(state,*value,"fov",inactive,global);
             changed|=toggle(state,*value,"visualize_fov",inactive,global);
-            changed|=number(state,*value,"smoothing",inactive,global);
-            changed|=number(state,*value,"reaction_time",inactive,global);
-            planned("Combat/Legit/Aim assist/Target switch delay","Target switch delay");
+            changed|=number(state,*value,value->aim_mode==0?"smoothing":"assist_strength",inactive,global);
+            if(matches(state,number_path("reaction_time"),"Engagement delay")||matches(state,number_path("reaction_max"),"Engagement delay")){changed|=widgets::range_slider("aim_delay","Engagement delay",value->reaction_time,value->reaction_max,0,500,1,inactive);reveal(state,number_path("reaction_time"));reveal(state,number_path("reaction_max"));}
             constexpr const char* recoil_path="Combat/Legit/RCS";
             if(matches(state,recoil_path,"Recoil control Enabled Start bullet Vertical Horizontal Standalone")||state.search_target.starts_with(recoil_path)){
                 ImGui::PushID(recoil_path);
@@ -247,7 +258,6 @@ void render(MenuRuntime& state) {
                 if(!blocked&&(opened.clicked||(request&&!ImGui::IsPopupOpen("details"))))ImGui::OpenPopup("details");
                 if(widgets::begin_popup("details",opened.bounds,theme::popup_width,430,nullptr,true,true)){
                     changed|=toggle(state,*value,"recoil_control",blocked,global);
-                    planned("Combat/Legit/RCS/Bullet start","Start bullet");
                     for(const auto* key:{"recoil_vertical","recoil_horizontal"})changed|=number(state,*value,key,blocked||!value->recoil_control,global);
                     changed|=toggle(state,*value,"standalone_recoil",blocked||!value->recoil_control,global);
                     widgets::end_popup();
@@ -259,17 +269,18 @@ void render(MenuRuntime& state) {
         if(widgets::begin_group("legit_trigger","Triggerbot")){
             changed|=toggle(state,*value,"trigger",blocked,global);
             const bool inactive=blocked||!value->trigger;
-            std::array conditions{value->trigger_flash,value->trigger_air,value->scoped_only};
-            constexpr widgets::Option checks[]{{"Flash"},{"Air"},{"Require sniper scope"}};
-            if(multi("Combat/Legit/Triggerbot/Conditions","Conditions",conditions,checks,inactive)){value->trigger_flash=conditions[0];value->trigger_air=conditions[1];value->scoped_only=conditions[2];changed=true;}
+            std::array conditions{value->trigger_flash,value->trigger_smoke,value->trigger_air,value->scoped_only};
+            constexpr widgets::Option checks[]{{"Flash"},{"Smoke"},{"Air"},{"Require sniper scope"}};
+            if(multi("Combat/Legit/Triggerbot/Checks","Checks",conditions,checks,inactive)){value->trigger_flash=conditions[0];value->trigger_smoke=conditions[1];value->trigger_air=conditions[2];value->scoped_only=conditions[3];changed=true;}
             changed|=multi(trigger_hitbox_path,"Hitboxes",value->trigger_hitboxes,hitboxes,inactive);
-            planned("Combat/Legit/Triggerbot/Hit chance","Hit chance");
-            for(const auto* key:{"trigger_minimum_damage","trigger_reaction"})changed|=number(state,*value,key,inactive,global);
+            changed|=number(state,*value,"trigger_hit_chance",inactive,global);
+            changed|=number(state,*value,"trigger_minimum_damage",inactive,global);
+            if(matches(state,number_path("trigger_reaction"),"Delay")||matches(state,number_path("trigger_reaction_max"),"Delay")){changed|=widgets::range_slider("trigger_delay","Delay",value->trigger_reaction,value->trigger_reaction_max,0,1000,1,inactive);reveal(state,number_path("trigger_reaction"));reveal(state,number_path("trigger_reaction_max"));}
         }widgets::end_group();ImGui::EndTable();
     }
     ImGui::PopStyleVar();
     remember_hotkey_frame();
-    if(changed){state.dirty=true;commit_feature_edit(state,before);}
+    if(changed){if(value)combat::normalize_delays(*value);state.dirty=true;commit_feature_edit(state,before);}
 }
 void evaluate(MenuRuntime& state) {
     if(!state.gameplay_wired)return;
@@ -280,13 +291,21 @@ void evaluate(MenuRuntime& state) {
     for(const auto& field:combat::legit_choices){if(!exposed(choice_path(field.key)))continue;const auto id=binding(choice_path(field.key));auto& option=hotkeys::option(id);option.kind=hotkeys::Kind::Selection;option.minimum=0;option.maximum=static_cast<double>(field.names.size()-1);option.choices.assign(field.names.begin(),field.names.end());option.choice_disabled.assign(field.names.size(),false);double number=value.*field.member;if(hotkeys::evaluate(id,number,!model.master_enabled)){value.*field.member=std::clamp(static_cast<int>(number),0,static_cast<int>(field.names.size())-1);changed=true;}}
     for(const auto& item:{std::pair{hitbox_path,&value.hitboxes},std::pair{trigger_hitbox_path,&value.trigger_hitboxes},std::pair{multipoint_path,&value.multipoint}}){if(!exposed(item.first))continue;const auto id=binding(item.first);auto& option=hotkeys::option(id);option.kind=hotkeys::Kind::Multi;option.choices={"Head","Chest","Stomach","Pelvis","Arms","Legs"};option.choice_disabled.assign(6,false);changed|=hotkeys::evaluate(id,*item.second,!model.master_enabled||(std::string_view(item.first)==trigger_hitbox_path?!value.trigger:!value.enabled));}
     for(int trigger=0;trigger<2;++trigger){
-        const char* path=trigger?"Combat/Legit/Triggerbot/Conditions":"Combat/Legit/Aim assist/Conditions";
-        std::array<bool,3> conditions=trigger?std::array{value.trigger_flash,value.trigger_air,value.scoped_only}:std::array{value.on_fire,value.pause_flashed,false};
+        const char* path=trigger?"Combat/Legit/Triggerbot/Checks":"Combat/Legit/Aim assist/Checks";
+        std::array<bool,4> conditions=trigger?std::array{value.trigger_flash,value.trigger_smoke,value.trigger_air,value.scoped_only}:std::array{value.pause_flashed,value.smoke_check,value.air_check,false};
         const auto id=binding(path);auto& option=hotkeys::option(id);option.kind=hotkeys::Kind::Multi;
-        option.choices=trigger?std::vector<std::string>{"Flash","Air","Require sniper scope"}:std::vector<std::string>{"Only while firing","Pause while flashed"};option.choice_disabled.assign(option.choices.size(),false);
-        if(hotkeys::evaluate(id,std::span(conditions).first(option.choices.size()),!model.master_enabled||(trigger?!value.trigger:!value.enabled))){if(trigger){value.trigger_flash=conditions[0];value.trigger_air=conditions[1];value.scoped_only=conditions[2];}else{value.on_fire=conditions[0];value.pause_flashed=conditions[1];}changed=true;}
+        option.choices=trigger?std::vector<std::string>{"Flash","Smoke","Air","Require sniper scope"}:std::vector<std::string>{"Flash","Smoke","Air"};option.choice_disabled.assign(option.choices.size(),false);
+        if(hotkeys::evaluate(id,std::span(conditions).first(option.choices.size()),!model.master_enabled||(trigger?!value.trigger:!value.enabled))){if(trigger){value.trigger_flash=conditions[0];value.trigger_smoke=conditions[1];value.trigger_air=conditions[2];value.scoped_only=conditions[3];}else{value.pause_flashed=conditions[0];value.smoke_check=conditions[1];value.air_check=conditions[2];}changed=true;}
+    }
+    // Keep existing condition hotkey identities and meanings across migration.
+    for(int trigger=0;trigger<2;++trigger){
+        const char* path=trigger?"Combat/Legit/Triggerbot/Conditions":"Combat/Legit/Aim assist/Conditions";
+        auto& option=hotkeys::option(binding(path));if(option.entries.empty())continue;
+        std::array<bool,3> conditions=trigger?std::array{value.trigger_flash,value.trigger_air,value.scoped_only}:std::array{value.activation==1,value.pause_flashed,false};
+        option.kind=hotkeys::Kind::Multi;option.choices=trigger?std::vector<std::string>{"Flash","Air","Require sniper scope"}:std::vector<std::string>{"Only while firing","Pause while flashed"};option.choice_disabled.assign(option.choices.size(),false);
+        if(hotkeys::evaluate(binding(path),std::span(conditions).first(option.choices.size()),!model.master_enabled||(trigger?!value.trigger:!value.enabled))){if(trigger){value.trigger_flash=conditions[0];value.trigger_air=conditions[1];value.scoped_only=conditions[2];}else{if(value.activation!=2)value.activation=conditions[0]?1:0;value.on_fire=conditions[0];value.pause_flashed=conditions[1];}changed=true;}
     }
     remember_hotkey_frame();
-    if(changed){state.dirty=true;commit_feature_edit(state,before);}
+    if(changed){combat::normalize_delays(value);state.dirty=true;commit_feature_edit(state,before);}
 }
 }

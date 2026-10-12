@@ -14,8 +14,9 @@ struct Target {
     std::uint32_t scene_handle{};
     bool glow_enabled{},chams{},visible_chams{},hidden_chams{},original_material{};
     std::array<float,4> visible_color{},hidden_color{};
+    int visible_styles{},hidden_styles{};
 };
-struct Frame {std::uint64_t sampled{};std::vector<Target> targets;std::array<std::uintptr_t,2> materials{};};
+struct Frame {std::uint64_t sampled{};std::vector<Target> targets;std::array<std::uintptr_t,2> materials{};std::array<std::array<std::uintptr_t,2>,6> layer_materials{};};
 inline std::atomic<std::shared_ptr<const Frame>> frame;
 void bind(std::uintptr_t client,hooks::Runtime& runtime);
 void bind_glow(std::uintptr_t client,hooks::Runtime& runtime);

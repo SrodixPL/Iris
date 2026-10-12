@@ -31,6 +31,7 @@ Value& value(int index) {
   if(inserted) {it->second.number=nodes[index].initial;const auto c=feature_switches::default_color(nodes[index].path);it->second.color={c[0],c[1],c[2],c[3]};}
   if(inserted && std::string_view(nodes[index].path)=="Visuals/Player/ESP items/Flag types"){const auto defaults=visuals::Settings{}.flags;std::copy(defaults.begin(),defaults.end(),it->second.selections.begin());}
   if(inserted && std::string_view(nodes[index].path)=="Visuals/Player/Enemy model / Chams/Visible pass")it->second.enabled=true;
+  if(inserted && std::string_view(nodes[index].path)=="Visuals/Player/Other/Material")it->second.choice=1;
   return it->second;
 }
 std::vector<widgets::Option> options(const Node& node,std::vector<std::string>& labels) {
@@ -65,7 +66,7 @@ bool search_match(int index,const char* query) {
   if(nodes[node.parent].kind==Kind::TogglePanel && std::string_view(node.label)=="Enable")return false;
   return inventory::matches(node.path,query)||inventory::matches(node.label,query);
 }
-std::vector<int> children(int index) { std::vector<int> out;for(int i=0;i<std::size(nodes);++i)if(index>=0 && nodes[i].parent==index && page_for(i)!=Page::Count && !(nodes[index].kind==Kind::ToggleColor || nodes[index].kind==Kind::MultiColor))out.push_back(i);return out; }
+std::vector<int> children(int index) { std::vector<int> out;for(int i=0;i<std::size(nodes);++i)if(index>=0 && nodes[i].parent==index && page_for(i)!=Page::Count && !(nodes[index].kind==Kind::ToggleColor || nodes[index].kind==Kind::MultiColor || nodes[index].kind==Kind::ChoiceColor))out.push_back(i);return out; }
 bool matches(int index,const char* query) {
   if(inventory::matches(nodes[index].path,query)||inventory::matches(nodes[index].label,query))return true;
   for(int child:children(index))if(matches(child,query))return true;
@@ -97,7 +98,10 @@ void row(MenuRuntime& state,int index,bool& changed) {
   ImGui::PushID(node.path);
   const bool reveal=reveal_route(state,index);
   Bounds rendered{};
-  Context context{state,index,&changed};widgets::PopupContents contents{node.label,panel,&context,430,reveal};
+  // Popup rows can edit settings during the parent widget call. Keep their
+  // result separate so the parent's return value cannot discard those edits.
+  bool popup_changed=false;
+  Context context{state,index,&popup_changed};widgets::PopupContents contents{node.label,panel,&context,430,reveal};
   switch(node.kind) {
   case Kind::Toggle:changed|=widgets::toggle("value",node.label,toggle_value,locked,nullptr,true,true,binding);break;
   case Kind::Number:changed|=widgets::slider("value",node.label,v.number,node.low,node.high,0,node.format,locked,true,true,false,nullptr,binding);break;
@@ -114,6 +118,14 @@ void row(MenuRuntime& state,int index,bool& changed) {
     auto& color_value=value(find(node.color_path));color_value.editor.request_open|=reveal;
     const widgets::ColorAffordance color{color_value.color,color_value.editor,state.color_palette};
     changed|=widgets::multi_combo("value",node.label,std::span(v.selections).first(choices.size()),choices,node.label,locked,nullptr,true,binding,&color);
+    break;
+  }
+  case Kind::ChoiceColor: {
+    std::vector<std::string> labels;const auto choices=options(node,labels);
+    auto& color_value=value(find(node.color_path));color_value.editor.request_open|=reveal;
+    const widgets::ColorAffordance color{color_value.color,color_value.editor,state.color_palette};
+    v.choice=std::clamp(v.choice,0,static_cast<int>(choices.size())-1);
+    changed|=widgets::combo("value",node.label,v.choice,choices,locked,nullptr,true,true,binding,&color);
     break;
   }
   case Kind::Choice:case Kind::Multi: {
@@ -140,6 +152,7 @@ void row(MenuRuntime& state,int index,bool& changed) {
     auto tint=theme::accent;tint.w*=.4f;
     ImGui::GetWindowDrawList()->AddRect(rendered.min,rendered.max,ImGui::GetColorU32(tint),theme::control_radius*s,0,s);
   }
+  changed|=popup_changed;
   ImGui::PopID();
 }
 void group(MenuRuntime& state,const char* id,const char* title,const std::vector<int>& items,bool& changed,bool trailing_gap=true) {
@@ -162,6 +175,7 @@ void load(const MenuRuntime& state) {
       if(item.contains("key")&&item["key"].is_number_integer()) {auto key=item["key"].get<int>();if(key>=ImGuiKey_NamedKey_BEGIN&&key<ImGuiKey_NamedKey_END)v.key=static_cast<ImGuiKey>(key);}
       if(item.contains("color")&&item["color"].is_array()&&item["color"].size()==4)for(int c=0;c<4;++c)if(item["color"][c].is_number()) {auto n=item["color"][c].get<float>();if(std::isfinite(n))(&v.color.x)[c]=std::clamp(n,0.f,1.f);}
       if(item.contains("selected")&&item["selected"].is_array())for(int c=0;c<16&&c<item["selected"].size();++c)if(item["selected"][c].is_boolean())v.selections[c]=item["selected"][c].get<bool>();
+      if(nodes[i].kind==Kind::ChoiceColor){for(unsigned c=0;c<6;++c)if(v.selections[c]){v.choice=c+1;break;}v.selections.fill(false);}
     }
   }catch(const Json::exception&) { /* Older and absent preview state uses tolerant defaults. */ }
   const int master=find("Visuals/Player/Enabled");
@@ -203,8 +217,8 @@ void evaluate(MenuRuntime& state) {
     for(int owner=i;owner>=0;owner=nodes[owner].parent)if(nodes[owner].gate){const int gate=find(nodes[owner].gate);disabled|=gate<0 || !feature_switches::wired(nodes[owner].gate) || !value(gate).enabled;}
     if(n.kind==Kind::Toggle || n.kind==Kind::TogglePanel || n.kind==Kind::ToggleColor){binding.kind=hotkeys::Kind::Boolean;changed|=hotkeys::evaluate(id,v.enabled,disabled);}
     else if(n.kind==Kind::Number){binding.kind=hotkeys::Kind::Number;binding.minimum=n.low;binding.maximum=n.high;double number=v.number;if(hotkeys::evaluate(id,number,disabled)){v.number=static_cast<float>(number);changed=true;}}
-    else if(n.kind==Kind::Choice || n.kind==Kind::Multi){std::vector<std::string> labels;const auto list=options(n,labels);binding.choices=labels;binding.choice_disabled.assign(labels.size(),false);for(std::size_t option_index=0;option_index<list.size();++option_index)binding.choice_disabled[option_index]=list[option_index].disabled;
-      if(n.kind==Kind::Multi){binding.kind=hotkeys::Kind::Multi;changed|=hotkeys::evaluate(id,std::span(v.selections).first(std::min(labels.size(),v.selections.size())),disabled);}
+    else if(n.kind==Kind::Choice || n.kind==Kind::ChoiceColor || n.kind==Kind::Multi || n.kind==Kind::MultiColor){std::vector<std::string> labels;const auto list=options(n,labels);binding.choices=labels;binding.choice_disabled.assign(labels.size(),false);for(std::size_t option_index=0;option_index<list.size();++option_index)binding.choice_disabled[option_index]=list[option_index].disabled;
+      if(n.kind==Kind::Multi || n.kind==Kind::MultiColor){binding.kind=hotkeys::Kind::Multi;changed|=hotkeys::evaluate(id,std::span(v.selections).first(std::min(labels.size(),v.selections.size())),disabled);}
       else{binding.kind=hotkeys::Kind::Selection;binding.minimum=0;binding.maximum=labels.empty()?0:static_cast<double>(labels.size()-1);binding.step=1;double number=v.choice;if(hotkeys::evaluate(id,number,disabled)){v.choice=static_cast<int>(number);changed=true;}}
     }
   }
@@ -235,9 +249,10 @@ bool search_results(MenuRuntime& state,bool select_first) {
 }
 void player_selector(MenuRuntime& state,float width){
   if(player_owner!=&state){player_owner=&state;player_preview={};}
-  if(widgets::begin_dropdown("##player_target",player_preview.target==2?"Teammates":"Enemies",2,width)){
-    ImGui::PushID("Enemies");if(widgets::popup_item("Enemies",player_preview.target!=2)){player_preview.target=0;player_preview.selected=esp_preview::Element::Count;}
+  if(widgets::begin_dropdown("##player_target",player_preview.target==3?"Other":player_preview.target==2?"Teammates":"Enemies",3,width)){
+    ImGui::PushID("Enemies");if(widgets::popup_item("Enemies",player_preview.target==0)){player_preview.target=0;player_preview.selected=esp_preview::Element::Count;}
     ImGui::PopID();ImGui::PushID("Teammates");if(widgets::popup_item("Teammates",player_preview.target==2)){player_preview.target=2;player_preview.selected=esp_preview::Element::Count;}
+    ImGui::PopID();ImGui::PushID("Other");if(widgets::popup_item("Other",player_preview.target==3)){player_preview.target=3;player_preview.selected=esp_preview::Element::Count;}
     ImGui::PopID();widgets::end_dropdown();
   }
   state.title_bounds={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
@@ -263,6 +278,11 @@ void render(MenuRuntime& state) {
       group(state,"world_misc","Misc",children(find("Visuals/World/Miscellaneous")),changed,false);
     } else if(page==Page::Player) {
       auto& preview=player_preview;
+      if(state.search_reveal_pending&&state.search_target.starts_with("Visuals/Player/Other/"))preview.target=3;
+      if(preview.target==3){
+        group(state,"first_person","First person",{find("Visuals/Player/Other/Weapon chams"),find("Visuals/Player/Other/Hands and gloves"),find("Visuals/Player/Other/Material")},changed);
+        ImGui::TableNextColumn();
+      }else{
       constexpr const char* toggle_paths[]{"Visuals/Player/ESP items/Box","Visuals/Player/ESP items/Name","Visuals/Player/ESP items/Health bar","Visuals/Player/ESP items/Health number","Visuals/Player/ESP items/Ammo bar","Visuals/Player/ESP items/Armor bar","Visuals/Player/ESP items/Weapon","Visuals/Player/ESP items/Distance","Visuals/Player/ESP items/Flags","Visuals/Player/ESP items/Snapline","Visuals/Player/ESP items/Skeleton","Visuals/Player/ESP items/Hitboxes","Visuals/Player/Off-screen arrows","Visuals/Player/Sound ESP"};
       constexpr const char* color_keys[]{"box_enemy_color","name_color","health_low_color","health_number_color","ammo_color","armor_color","weapon_color","distance_color","flags_color","snapline_color","skeleton_color","hitbox_color","arrow_color","sound_color"};
       if(state.search_reveal_pending&&state.search_target.starts_with("Visuals/Player/"))preview.target=state.search_target.starts_with("Visuals/Player/Teammates/")?2:0;
@@ -354,6 +374,7 @@ void render(MenuRuntime& state) {
         if(teammate){state.values.cosmetics.player_visuals.separate_teammate_esp=true;state.values.cosmetics.player_visuals.teammate_esp=visuals::teammate_options(projected.cosmetics.player_visuals);state.values.cosmetics.player_visuals.teammate_esp.layout=layout;}
         else state.values.cosmetics.player_visuals.esp_layout=layout;
         state.dirty=true;commit_feature_edit(state,before);
+      }
       }
     } else if(page==Page::Misc) {
       group(state,"movement","Movement",children(find("Misc/Misc/Movement")),changed);

@@ -1,5 +1,6 @@
 #include "core/sdk/binding_values.hpp"
 #include "core/features/runtime.hpp"
+#include "core/features/world/environment.hpp"
 #include "core/features/world/native.hpp"
 #include "core/features/world/esp.hpp"
 #include "core/features/combat/nospread.hpp"
@@ -241,6 +242,7 @@ void bind(Runtime& state) {
     state.inventory_equip_guard->enable();
     state.deathnotice_hook->enable();
     state.scope_render_hook->enable();
+    bind_flash(state);
     enable_preview_receipts(state);
     state.paint_hook->enable();
     state.seed_hook->enable();

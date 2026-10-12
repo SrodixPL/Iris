@@ -16,7 +16,7 @@ void update_environment(Runtime& state) {
             restore_environment_entity(it->second,valid);it=state.smoke_volumes.erase(it);
         }else ++it;
     }
-    if(!settings.enabled || state.stopping) {
+    if((!settings.enabled&&!state.requested.player_visuals.radar) || state.stopping) {
         for(auto& [handle,saved]:state.environment_entities)
             restore_environment_entity(saved,entity(state,handle)==saved.address);
         state.environment_entities.clear();state.environment_scan=0;return;

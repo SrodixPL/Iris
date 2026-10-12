@@ -110,6 +110,7 @@ void plan_jumps(Address command,const movement::Settings& config,bool held) {
         if(i->number==cmd.number&&i->tick==base.tick&&i->seed==base.random_seed&&i->pawn==handle&&i->config==config){
             state->jump_plan=*i;
             if(!write_jump_plan(command,cmd,base,*state->jump_plan))movement_status="Movement paused: jump input changed during rebuild";
+            else movement_status=config.bhop?"Bunny hop active":"Movement active";
             return;
         }
     MovementObservation sample;sample.number=cmd.number;sample.tick=base.tick;sample.seed=base.random_seed;sample.pawn=handle;

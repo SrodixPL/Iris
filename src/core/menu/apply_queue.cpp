@@ -136,6 +136,8 @@ void merge(const MenuState& before,const MenuState& requested,const MenuState& a
   for(const auto& toggle:movement::toggles)field(mb.*toggle.member,mr.*toggle.member,ma.*toggle.member,mt.*toggle.member,publish);
   const auto& vb=before.cosmetics.player_visuals;const auto& vr=requested.cosmetics.player_visuals;const auto& va=actual.cosmetics.player_visuals;auto& vt=target.cosmetics.player_visuals;
   for(const auto& option:visuals::toggles)field(vb.*option.member,vr.*option.member,va.*option.member,vt.*option.member,publish);
+  field(vb.visible_styles,vr.visible_styles,va.visible_styles,vt.visible_styles,publish);field(vb.hidden_styles,vr.hidden_styles,va.hidden_styles,vt.hidden_styles,publish);
+  field(vb.first_person_material,vr.first_person_material,va.first_person_material,vt.first_person_material,publish);
   field(vb.box_style,vr.box_style,va.box_style,vt.box_style,publish);field(vb.max_distance,vr.max_distance,va.max_distance,vt.max_distance,publish);
   field(vb.weapon_mode,vr.weapon_mode,va.weapon_mode,vt.weapon_mode,publish);
   field(vb.thickness,vr.thickness,va.thickness,vt.thickness,publish);field(vb.arrow_size,vr.arrow_size,va.arrow_size,vt.arrow_size,publish);

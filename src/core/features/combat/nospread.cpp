@@ -57,6 +57,7 @@ struct Plan {int seed{},tick{},history_index{},shot_tick{};Address pawn{},weapon
 struct ShotRequest {std::int64_t number{};int tick{},seed{};std::uint32_t pawn{},weapon{};Settings config;bool stop{},blocked{},scope{};};
 struct ViewSample {int tick{};float fraction{};Vector sent{};};
 struct ViewPlan {int seed{},tick{};Address pawn{},weapon{};std::uint32_t target{};Vector point{},sent{},delta{};combat::Settings config;bool rage{},camera_applied{};std::vector<ViewSample> samples;std::uint32_t pawn_handle{},weapon_handle{};std::int64_t raw_number{};};
+struct TriggerPlan {int seed{},tick{},player_tick{};float player_fraction{};std::uint32_t pawn{},weapon{},target{};Vector view{};std::shared_ptr<const combat::Settings> generation;};
 struct MovementObservation {std::int64_t number{};int tick{},seed{};std::uint32_t pawn{};bool grounded{};Vector origin{},velocity{};float duck{};};
 struct MovementEdit {std::int64_t number{};int tick{},seed{};std::uint32_t pawn{};movement::Axes terminal{},baseline{};movement::Settings config;};
 struct SteeringPlan {std::int64_t number{};int tick{},seed{};std::uint32_t pawn{};movement::Settings config;bool rage_stop{};float yaw{};movement::SteeringDecision decision;};
@@ -126,6 +127,10 @@ struct State {
     std::chrono::steady_clock::time_point last_view{},acquired{};
     combat::ShotConfirmation shot_confirmation;
     combat::ShotConfirmation trigger_confirmation;
+    std::deque<TriggerPlan> trigger_plans;
+    float acquisition_delay{},trigger_delay{};
+    Vector previous_camera{};
+    bool previous_camera_valid{};
     std::chrono::steady_clock::time_point last_trigger{};
     std::int64_t processed{};int processed_tick{},processed_seed{};Address processed_pawn{};std::uint32_t processed_handle{},processed_weapon{};Settings processed_config;
     ULONGLONG preview_sampled{};
@@ -587,8 +592,9 @@ bool safe_apply(Address proto,Transaction* transient,bool cancel_only=false) {
         }
         if(cancel_only)return false;
         const auto base=read_native<Base>(read_native<Address>(proto+binding_values::layout_proto_base));
-        if(state->view_plan&&state->view_plan->seed==base.random_seed&&state->view_plan->tick==base.tick)return apply_view(proto,*state->view_plan);
-        return false;
+        bool applied=false;
+        if(state->view_plan&&state->view_plan->seed==base.random_seed&&state->view_plan->tick==base.tick)applied=apply_view(proto,*state->view_plan,transient);
+        return apply_trigger(proto,*transient)||applied;
     }catch(const std::exception& e){state->encoding_rejected=true;suspend(e.what());return false;}
 }
 bool guarded_apply(Address proto,Transaction* transient,bool cancel_only=false) {
@@ -729,11 +735,12 @@ void log_input_changes() {
     }
     if(aim&&(!state->logged_aim||*state->logged_aim!=*aim)){
         state->logged_aim=*aim;
-        std::snprintf(message,sizeof(message),"Settings Legit: enabled=%d recoil=%d trigger=%d",aim->legit.enabled,aim->legit.recoil_control,aim->legit.trigger);overlay_log(message);
+        const auto definition=legit_weapon_definition.load();const auto selected=aim->resolve(definition);
+        std::snprintf(message,sizeof(message),"Settings Legit: master=%d weapon=%u enabled=%d mode=%d activation=%d recoil=%d trigger=%d aim_delay=%.0f-%.0f trigger_delay=%.0f-%.0f chance=%.0f",aim->master_enabled,static_cast<unsigned>(definition),selected.enabled,selected.aim_mode,selected.activation,selected.recoil_control,selected.trigger,selected.reaction_time,selected.reaction_max,selected.trigger_reaction,selected.trigger_reaction_max,selected.trigger_hit_chance);overlay_log(message);
     }
     if(motion&&(!state->logged_movement||*state->logged_movement!=*motion)){
         state->logged_movement=*motion;const auto& o=motion->options;
-        std::snprintf(message,sizeof(message),"Settings movement: bhop=%d chance=%.0f limit=%.0f assist=%d strength=%.2f",motion->bhop,o.chance,o.attempt_limit,motion->keys,motion->strength);overlay_log(message);
+        std::snprintf(message,sizeof(message),"Settings movement: bhop=%d humanize=%d chance=%.0f limit=%.0f assist=%d strength=%.2f",motion->bhop,o.humanize,o.chance,o.attempt_limit,motion->keys,motion->strength);overlay_log(message);
     }
     if(now-state->transition_logged>=250&&(state->last_rage_status!=status.load()||state->last_movement_status!=movement_status.load())){
         state->transition_logged=now;state->last_rage_status=status.load();state->last_movement_status=movement_status.load();

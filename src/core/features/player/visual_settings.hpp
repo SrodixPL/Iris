@@ -40,6 +40,11 @@ struct Settings {
     bool enabled{}, teammates{}, visible_only{}, box{true}, name{true}, distance{}, health{true}, ammo{}, skeleton{}, arrows{}, glow{}, hitboxes{}, health_number{}, armor{}, snapline{}, weapon{true};
     bool sounds{},chams{},chams_visible{true},chams_visible_only{},box_visible_only{};
     int box_style{}, weapon_mode{},chams_material{};
+    int visible_styles{},hidden_styles{};
+    bool radar{},weapon_chams{},hands_chams{};
+    int first_person_material{1};
+    std::array<float,4> weapon_chams_color{1,.35f,.38f,1},hands_chams_color{1,.35f,.38f,1};
+    std::array<float,4> glow_color{1,.35f,.38f,1};
     float max_distance{150}, thickness{1}, arrow_size{12},box_opacity{1},chams_opacity{1},box_max_distance{150},chams_max_distance{150};
     std::array<bool,9> flags{true,true,true,true,true,true,false,true,false};
     std::array<float,4> enemy_color{1,.35f,.38f,1}, ally_color{.35f,.7f,1,1}, hidden_color{1,.65f,.3f,.85f};
@@ -69,13 +74,14 @@ inline TargetEsp teammate_options(const Settings& s){
     TargetEsp out;for(const auto& field:esp_toggles)out.*field.target=s.*field.shared;
     out.enabled=s.enabled&&s.teammates;out.flags=s.flags;out.layout=s.esp_layout;return out;
 }
-inline bool any_esp_enabled(const Settings& s){return s.enabled||teammate_options(s).enabled;}
+inline bool any_esp_enabled(const Settings& s){return s.enabled||teammate_options(s).enabled||s.weapon_chams||s.hands_chams;}
 inline Settings for_target(const Settings& s,bool enemy){
     auto out=s;if(!enemy){const auto target=teammate_options(s);for(const auto& field:esp_toggles)out.*field.shared=target.*field.target;out.flags=target.flags;out.esp_layout=target.layout;}
     return out;
 }
 struct Toggle {const char* key;const char* label;bool Settings::*member;};
 inline constexpr std::array toggles{
+    Toggle{"radar","In-Game Radar",&Settings::radar},Toggle{"weapon_chams","Weapon chams",&Settings::weapon_chams},Toggle{"hands_chams","Hands and gloves chams",&Settings::hands_chams},
     Toggle{"enabled","Player visuals",&Settings::enabled},Toggle{"teammates","Include teammates",&Settings::teammates},
     Toggle{"visible_only","Visible only",&Settings::visible_only},Toggle{"box","Bounding box",&Settings::box},
     Toggle{"name","Name",&Settings::name},Toggle{"distance","Distance",&Settings::distance},Toggle{"health","Health bar",&Settings::health},
@@ -87,6 +93,8 @@ inline constexpr std::array toggles{
 inline constexpr std::array<const char*,9> flag_names{"Defusing","Defuse kit","Blind","Scoped","Reloading","Bomb","Money","Hostage","Armor / helmet"};
 struct Color {const char* key;std::array<float,4> Settings::*member;};
 inline constexpr std::array colors{Color{"enemy_color",&Settings::enemy_color},Color{"ally_color",&Settings::ally_color},Color{"hidden_color",&Settings::hidden_color},
+    Color{"glow_color",&Settings::glow_color},
+    Color{"weapon_chams_color",&Settings::weapon_chams_color},Color{"hands_chams_color",&Settings::hands_chams_color},
     Color{"box_enemy_color",&Settings::box_enemy_color},Color{"box_ally_color",&Settings::box_ally_color},Color{"box_hidden_color",&Settings::box_hidden_color},
     Color{"chams_color",&Settings::chams_color},Color{"chams_hidden_color",&Settings::chams_hidden_color},
     Color{"name_color",&Settings::name_color},Color{"health_low_color",&Settings::health_low_color},Color{"health_full_color",&Settings::health_full_color},
@@ -103,6 +111,9 @@ inline std::array<float,4> health_color(const Settings& s,float fraction) {
     return result;
 }
 inline void validate(const Settings& s) {
+    if(s.first_person_material<0||s.first_person_material>5)throw std::invalid_argument("First person material is outside its supported range.");
+    const auto material=[](int mask){return mask>=0&&mask<=32&&(mask==0||(mask&(mask-1))==0);};
+    if(!material(s.visible_styles)||!material(s.hidden_styles))throw std::invalid_argument("Select one chams material per pass.");
     const auto range=[](float v,float lo,float hi){return std::isfinite(v)&&v>=lo&&v<=hi;};
     if(s.box_style<0||s.box_style>1||s.weapon_mode<0||s.weapon_mode>2||s.chams_material<0||s.chams_material>4||!range(s.box_opacity,0,1)||!range(s.chams_opacity,0,1)||!range(s.box_max_distance,5,500)||!range(s.chams_max_distance,5,500)||!range(s.max_distance,5,500)||!range(s.thickness,1,3)||!range(s.arrow_size,6,24))throw std::invalid_argument("Player visual setting is outside its supported range.");
     for(const auto& c:colors)for(float v:s.*c.member)if(!range(v,0,1))throw std::invalid_argument("Player visual color is invalid.");

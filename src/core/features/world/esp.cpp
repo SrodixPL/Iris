@@ -18,6 +18,7 @@ ULONGLONG scan_at{};
 constexpr std::size_t maximum_labels=512;
 
 std::optional<std::pair<Kind,std::string>> classify(std::string_view name){
+    if(name=="weapon_c4")return std::pair{Kind::Bomb,std::string{"C4"}};
     if(name.starts_with("weapon_"))return std::pair{Kind::Weapon,std::string{}};
     if(name=="hostage_entity")return std::pair{Kind::Hostage,std::string{"Hostage"}};
     if(name=="planted_c4")return std::pair{Kind::Bomb,std::string{"Planted C4"}};
@@ -82,14 +83,16 @@ void update_world_visuals(Runtime& state){
         const auto origin=memory::read<visuals::Vector>(scene+origin_field);
         if(!origin||!nospread::finite(*origin))continue;
         std::string label=candidate.label;
-        if(candidate.kind==Kind::Weapon){
+        if(candidate.kind==Kind::Weapon||candidate.label=="C4"){
             const auto owner=memory::read<std::uint32_t>(candidate.address+state.fields.owner);
             // An unresolved valid owner may be dormant or between network
             // updates; it is not evidence that this weapon was dropped.
             if(!owner || *owner!=0xffffffff)continue;
-            const auto definition=memory::read<std::uint16_t>(candidate.address+state.fields.attributes+state.fields.item+state.fields.definition);
-            const auto weapon=definition?find_weapon(*definition):nullptr;if(!weapon)continue;
-            label=weapon->name;
+            if(candidate.kind==Kind::Weapon){
+                const auto definition=memory::read<std::uint16_t>(candidate.address+state.fields.attributes+state.fields.item+state.fields.definition);
+                const auto weapon=definition?find_weapon(*definition):nullptr;if(!weapon)continue;
+                label=weapon->name;
+            }
         }
         // Verify identity again after copying fields; do not publish a recycled entity.
         if(entity(state,candidate.handle)==candidate.address)frame->labels.push_back({*origin,candidate.kind,std::move(label)});

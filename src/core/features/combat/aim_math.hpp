@@ -4,6 +4,27 @@
 #include "core/features/movement/planner.hpp"
 namespace iris::combat {
 using nospread::Vector;
+inline float random_unit(std::uint32_t seed) noexcept {seed^=seed>>16;seed*=0x7feb352du;seed^=seed>>15;seed*=0x846ca68bu;seed^=seed>>16;return static_cast<float>((seed+.5)/4294967296.0);}
+inline float sampled_delay(float lower,float upper,std::uint32_t seed) noexcept {
+    return lower+(std::max(lower+1.f,upper)-lower)*random_unit(seed);
+}
+inline float gaussian(std::uint32_t seed) noexcept {
+    const float u=std::max(random_unit(seed),1e-7f),v=random_unit(seed^0xa511e9b3u);
+    return std::sqrt(-2.f*std::log(u))*std::cos(6.283185307f*v);
+}
+inline Vector assist_step(Vector delta,Vector user,float strength,float dt,float radius) noexcept {
+    if(!nospread::finite(delta)||!nospread::finite(user)||!std::isfinite(dt)||dt<=0)return {};
+    const float distance=std::hypot(delta.x,delta.y),input=std::hypot(user.x,user.y);
+    if(input<=1e-6f||!std::isfinite(strength)||!std::isfinite(radius)||radius<=0||distance>radius)return {};
+    strength=std::clamp(strength,0.f,1.f);
+    const float proximity=std::clamp(1.f-distance/std::max(.1f,radius),0.f,1.f);
+    const float alignment=distance>1e-6f?std::clamp((delta.x*user.x+delta.y*user.y)/(distance*input),-1.f,1.f):0.f;
+    // Scale only the user's existing motion. Zero input cannot turn the view;
+    // the gain stays positive, so opposition remains movable at full strength.
+    const float gain=std::max(-.85f,2.f*strength*(.8f*std::max(0.f,alignment)*(1.f-proximity)-
+        proximity*proximity*(alignment>0?.6f:.45f)));
+    return user*gain;
+}
 inline Vector clamp_angles(Vector v) {return {std::clamp(v.x,-89.f,89.f),std::remainder(v.y,360.f),0};}
 inline Vector smooth(Vector current,Vector target,float dt,float time,float speed) {
     if(!nospread::finite(current)||!nospread::finite(target)||!std::isfinite(dt)||dt<=0||!std::isfinite(time)||time<=0||!std::isfinite(speed)||speed<=0)return current;

@@ -88,6 +88,9 @@ struct Runtime {
     using ScopeRender=void(__fastcall*)(void*,std::uint8_t*);
     std::unique_ptr<hooks::Hook> scope_render_hook;
     ScopeRender original_scope_render{};
+    using FlashEffect=void(__fastcall*)(Address,Address,float*);
+    std::unique_ptr<hooks::Hook> flash_effect_hook;
+    FlashEffect original_flash_effect{};
     Address schema_scope{};
     std::map<std::string,int> environment_offsets;
     std::map<std::uint32_t,EnvironmentEntity> environment_entities;

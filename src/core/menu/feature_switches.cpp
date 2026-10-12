@@ -41,6 +41,10 @@ constexpr PlayerToggle player_toggles[]{
 }
 bool wired(std::string_view path){
  const auto* control=node(path);if(!control || control->planned || path.starts_with("Combat/Rage"))return false;
+ if(path=="Visuals/World/HUD/Radar"||path=="Visuals/Player/Other/Weapon chams"||path=="Visuals/Player/Other/Hands and gloves")return true;
+ if(path=="Visuals/Player/Other/Material")return true;
+ if(path=="Combat/Legit/Aim assist/Checks"||path=="Combat/Legit/Triggerbot/Checks")return true;
+ if(path=="Visuals/Player/Visible chams"||path=="Visuals/Player/Hidden chams"||path=="Visuals/Player/Glow/Color"||path.starts_with("Misc/Misc/Movement/Bunny hop/"))return true;
  for(const auto& option:visuals::esp_toggles)if(path==std::string("Visuals/Player/Teammates/")+option.label)return true;
  if(path=="Visuals/Player/Teammates/Flags")return true;
  if(control->kind==Kind::ToggleColor && (!control->color_path || !wired(control->color_path)))return false;
@@ -103,6 +107,9 @@ void project(MenuState& s){
  c.movement_options.turn_speed=v.number("Misc/Misc/Movement/Air strafe/Turn speed",0,2880,c.movement_options.turn_speed);
  c.movement_options.slow_walk=v.on("Misc/Misc/Movement/Slow walk");c.movement_options.quick_stop=v.on("Misc/Misc/Movement/Standalone quick stop");
  c.movement_options.chance=v.number("Misc/Misc/Movement/Bounce chance",0,100,c.movement_options.chance);c.movement_options.attempt_limit=std::floor(v.number("Misc/Misc/Movement/Bounce limit",0,100,c.movement_options.attempt_limit));c.strafe_strength=v.number("Misc/Misc/Movement/Assist strength",0,100,c.strafe_strength*100)/100.f;
+ c.movement_options.humanize=v.on("Misc/Misc/Movement/Bunny hop/Humanize");
+ c.movement_options.chance=v.number("Misc/Misc/Movement/Bunny hop/Chance",0,100,c.movement_options.chance);
+ c.movement_options.attempt_limit=std::floor(v.number("Misc/Misc/Movement/Bunny hop/Max jumps",0,100,c.movement_options.attempt_limit));
  c.custom_fov=v.on("Visuals/World/View/Enable FOV override");c.fov=v.number("Visuals/World/View/FOV",60,140);
  c.scope_fov_override=v.on("Visuals/World/View/Scope options/Enable FOV override");c.scope_fov=v.number("Visuals/World/View/Scope options/Override scope FOV",60,140,c.scope_fov);
  c.viewmodel_override=v.on("Visuals/World/View/Viewmodel options/Override position");c.viewmodel_fov_override=v.on("Visuals/World/View/Viewmodel options/Enable FOV override");
@@ -131,6 +138,14 @@ void project(MenuState& s){
  p.glow=v.on("Visuals/Player/Glow");p.visible_only=v.on("Visuals/Player/ESP items/Visible only");p.box_style=v.choice("Visuals/Player/ESP items/Box style",1);p.weapon_mode=v.choice("Visuals/Player/ESP items/Weapon style",2);
  p.max_distance=v.number("Visuals/Player/ESP items/Distance limit",5,500,p.max_distance);p.thickness=v.number("Visuals/Player/ESP items/Thickness",1,3,p.thickness);p.box_opacity=v.number("Visuals/Player/ESP items/Box opacity",0,1);p.box_max_distance=v.number("Visuals/Player/ESP items/Box distance",5,500);
  p.chams_visible=v.item("Visuals/Player/Enemy model / Chams/Visible pass").contains("enabled")?v.on("Visuals/Player/Enemy model / Chams/Visible pass"):true;p.chams_visible_only=v.on("Visuals/Player/Enemy model / Chams/Visible only");p.chams_opacity=v.number("Visuals/Player/Enemy model / Chams/Opacity",0,1,p.chams_opacity);p.chams_max_distance=v.number("Visuals/Player/Enemy model / Chams/Distance limit",5,500,p.chams_max_distance);
+ const auto layers=[&](const char* path){const auto selected=v.multi<6>(path);for(unsigned i=0;i<selected.size();++i)if(selected[i])return 1<<i;const int choice=v.choice(path,6);return choice?1<<(choice-1):0;};
+ if(v.data.contains("Visuals/Player/Visible chams")||v.data.contains("Visuals/Player/Hidden chams")){
+   p.visible_styles=layers("Visuals/Player/Visible chams");p.hidden_styles=layers("Visuals/Player/Hidden chams");
+   p.chams=(p.visible_styles|p.hidden_styles)!=0;p.chams_visible=p.visible_styles!=0;p.chams_visible_only=p.hidden_styles==0;
+ }
+ p.glow_color=v.color("Visuals/Player/Glow/Color",p.glow_color);
+ p.radar=v.on("Visuals/World/HUD/Radar");p.weapon_chams=v.on("Visuals/Player/Other/Weapon chams");p.hands_chams=v.on("Visuals/Player/Other/Hands and gloves");
+ p.first_person_material=v.item("Visuals/Player/Other/Material").contains("choice")?v.choice("Visuals/Player/Other/Material",5):1;
  if(v.on("Visuals/Player/ESP items/Flags")&&v.item("Visuals/Player/ESP items/Flag types").contains("selected"))p.flags=v.multi<9>("Visuals/Player/ESP items/Flag types");
  p.enabled=v.item("Visuals/Player/Enabled").contains("enabled")?v.on("Visuals/Player/Enabled"):(p.glow||p.box||p.name||p.health||p.arrows||p.sounds||p.chams||p.distance||p.ammo||p.skeleton||p.hitboxes||p.health_number||p.armor||p.snapline||p.weapon||std::any_of(p.flags.begin(),p.flags.end(),[](bool on){return on;}));
  const auto teammate=visuals::teammate_options(p);p.teammate_esp=teammate;

@@ -40,11 +40,12 @@ struct SliderEdit { bool active{}, finished{}; Bounds track{}, value{}; };
 bool slider(const char* id, const char* label, float& value, float min, float max,
             float step=0, const char* format="%.1f", bool disabled=false, bool hotkeys=true, bool compact=false,bool stacked=false,SliderEdit* edit=nullptr,ImGuiID binding=0);
 bool percent(const char* id,const char* label,float& value,bool compact=false,ImGuiID binding=0);
+bool range_slider(const char* id,const char* label,float& lower,float& upper,float minimum,float maximum,float gap=1,bool disabled=false,bool compact=true);
 bool slider(const char* id, const char* label, int& value, int min, int max,
             int step=1, const char* format="%d", bool disabled=false, bool hotkeys=true, bool compact=false,ImGuiID binding=0);
 bool combo(const char* id, const char* label, int& selected,
            std::span<const Option> options, bool disabled=false,
-           const PopupContents* settings=nullptr, bool hotkeys=true, bool compact=false,ImGuiID binding=0);
+           const PopupContents* settings=nullptr, bool hotkeys=true, bool compact=false,ImGuiID binding=0,const ColorAffordance* color=nullptr);
 bool color_selector(const char* id,const char* label,ImVec4& color,ColorSelectorState& state,
                     ColorPalette& palette,bool disabled=false,bool compact=false,bool alpha=true);
 bool save_color_palette(ColorPalette& palette);

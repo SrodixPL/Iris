@@ -16,8 +16,8 @@ namespace {
 using Address=std::uintptr_t;
 using Draw=void(__fastcall*)(Address,Address,Address,int,Address,Address,Address);
 Draw draw_original{};
-Address tier{},materials_module{};
-std::array<Address,8> material_handles{};
+Address tier{},materials_module{},scene_module{};
+std::array<Address,12> material_handles{};
 bool materials_attempted{};
 std::atomic<std::uint64_t> submitted{},matched{},passes{};
 std::vector<std::unique_ptr<hooks::Hook>> installed;
@@ -34,17 +34,30 @@ std::uint32_t packed(const std::array<float,4>& color) noexcept {
 void __fastcall draw_hook(Address descriptor,Address context,Address meshes,int count,Address view,Address layer,Address stats) {
     const auto value=frame.load();
     if(!value||value->targets.empty()||count<=0||count>4096)return draw_original(descriptor,context,meshes,count,view,layer,stats);
+    // Mirror the reviewed draw dispatch: special passes own their materials/colors.
+    using Attribute=int(__fastcall*)(Address,std::uint32_t,int);
+    const auto attribute=reinterpret_cast<Attribute>(scene_module+sdk::binding_values::scene_integer_attribute);
+    const auto attributes=layer+sdk::binding_values::layout_layer_attributes;
+    if(!layer||attribute(attributes,sdk::binding_values::scene_special_pass_a,0)||
+       attribute(attributes,sdk::binding_values::scene_special_pass_b,0)||
+       attribute(attributes,sdk::binding_values::scene_special_pass_c,0))
+        return draw_original(descriptor,context,meshes,count,view,layer,stats);
     submitted.fetch_add(count,std::memory_order_relaxed);
     int pending{};
     for(int i=0;i<count;++i){
         const auto address=meshes+sizeof(sdk::visual_bindings::Primitive)*i;
         const auto primitive=memory::read<sdk::visual_bindings::Primitive>(address);
+        const auto override_material=memory::read<std::uint8_t>(address+sdk::binding_values::layout_primitive_material_override);
+        if(!override_material||*override_material)continue;
+        const auto flags=memory::read<std::uint16_t>(address+sdk::binding_values::layout_primitive_flags);
+        if(!flags||(*flags&sdk::binding_values::scene_alternate_primitive))continue;
         const auto owner=primitive?memory::read<std::uint32_t>(primitive->object+sdk::binding_values::layout_scene_owner):std::nullopt;
         const Target* target{};
         if(owner)for(const auto& candidate:value->targets)
             if(candidate.chams&&candidate.scene_handle==*owner&&current(*value,candidate)){target=&candidate;break;}
-        const bool hidden=target&&target->hidden_chams&&value->materials[1]&&target->hidden_color[3]>0;
-        const bool visible=target&&target->visible_chams&&(target->original_material||value->materials[0])&&target->visible_color[3]>0;
+        const bool layered=target&&(target->visible_styles||target->hidden_styles);
+        const bool hidden=target&&target->hidden_chams&&(layered||value->materials[1])&&target->hidden_color[3]>0;
+        const bool visible=target&&target->visible_chams&&(layered||target->original_material||value->materials[0])&&target->visible_color[3]>0;
         if(!hidden&&!visible)continue;
         if(i>pending)draw_original(descriptor,context,meshes+sizeof(*primitive)*pending,i-pending,view,layer,stats);
         matched.fetch_add(1,std::memory_order_relaxed);
@@ -55,9 +68,15 @@ void __fastcall draw_hook(Address descriptor,Address context,Address meshes,int 
             passes.fetch_add(1,std::memory_order_relaxed);
             draw_original(descriptor,context,reinterpret_cast<Address>(&mesh),1,view,layer,stats);
         };
-        if(hidden)pass(value->materials[1],target->hidden_color);
-        if(visible)pass(target->original_material?0:value->materials[0],target->visible_color);
-        else draw_original(descriptor,context,address,1,view,layer,stats);
+        bool drawn{};
+        if(layered){
+            for(unsigned style=0;style<value->layer_materials.size();++style)if(hidden&&(target->hidden_styles&(1<<style))&&value->layer_materials[style][1])pass(value->layer_materials[style][1],target->hidden_color);
+            for(unsigned style=0;style<value->layer_materials.size();++style)if(visible&&(target->visible_styles&(1<<style))&&value->layer_materials[style][0]){pass(value->layer_materials[style][0],target->visible_color);drawn=true;}
+        }else{
+            if(hidden)pass(value->materials[1],target->hidden_color);
+            if(visible){pass(target->original_material?0:value->materials[0],target->visible_color);drawn=true;}
+        }
+        if(!drawn)draw_original(descriptor,context,address,1,view,layer,stats);
         pending=i+1;
     }
     if(pending<count)draw_original(descriptor,context,meshes+sizeof(sdk::visual_bindings::Primitive)*pending,count-pending,view,layer,stats);
@@ -72,7 +91,7 @@ void bind_chams(hooks::Runtime& runtime) {
     const auto scene=GetModuleHandleW(L"scenesystem.dll"),parser=GetModuleHandleW(L"tier0.dll"),material=GetModuleHandleW(L"materialsystem2.dll");
     if(scene&&parser&&material&&sdk::sha256_file(scene)==sdk::world_bindings::scene_sha256&&
         sdk::sha256_file(parser)==sdk::visual_bindings::tier_sha256&&sdk::sha256_file(material)==sdk::visual_bindings::material_sha256){
-        tier=reinterpret_cast<Address>(parser);materials_module=reinterpret_cast<Address>(material);
+        tier=reinterpret_cast<Address>(parser);materials_module=reinterpret_cast<Address>(material);scene_module=reinterpret_cast<Address>(scene);
         install(runtime,reinterpret_cast<Address>(scene)+sdk::binding_values::scene_player_draw,reinterpret_cast<void*>(&draw_hook),draw_original);
         overlay_log("Player chams: animated mesh draw hook installed (CAnimatableSceneObjectDesc).");
     }else overlay_log("Player chams: native module fingerprint mismatch; material passes disabled.");
@@ -86,20 +105,20 @@ std::array<Address,2> prepare_materials(int style) {
         using Load=bool(__fastcall*)(void*,void*,const char*,const Id*,const char*,unsigned);
         using Create=Address*(__fastcall*)(void*,Address*,const char*,void*,unsigned,bool);
         // Parsed trees and material bindings remain pinned with the callbacks.
-        static std::array<std::array<std::uint64_t,2>,8> trees{};
+        static std::array<std::array<std::uint64_t,2>,12> trees{};
         const Id id{"generic",0x41b818518343427e,0xb5f447c23c0cdf8c};
-        for(unsigned i=0;i<8;++i){
+        for(unsigned i=0;i<12;++i){
             const auto text=material_text(i/2,(i&1)!=0);
             auto* tree=trees[i].data();
             if(reinterpret_cast<Construct>(tier+sdk::binding_values::tier_kv3_construct)(tree,1,6)!=tree)continue;
             if(!reinterpret_cast<Load>(tier+sdk::binding_values::tier_kv3_load)(tree,nullptr,text.c_str(),&id,nullptr,0))continue;
-            constexpr const char* names[]{"materials/iris/player_flat_visible.vmat","materials/iris/player_flat_hidden.vmat","materials/iris/player_glow_visible.vmat","materials/iris/player_glow_hidden.vmat","materials/iris/player_rim_visible.vmat","materials/iris/player_rim_hidden.vmat","materials/iris/player_solid_visible.vmat","materials/iris/player_solid_hidden.vmat"};
+            constexpr const char* names[]{"materials/iris/player_flat_visible.vmat","materials/iris/player_flat_hidden.vmat","materials/iris/player_glow_visible.vmat","materials/iris/player_glow_hidden.vmat","materials/iris/player_rim_visible.vmat","materials/iris/player_rim_hidden.vmat","materials/iris/player_solid_visible.vmat","materials/iris/player_solid_hidden.vmat","materials/iris/player_latex_visible.vmat","materials/iris/player_latex_hidden.vmat","materials/iris/player_metallic_visible.vmat","materials/iris/player_metallic_hidden.vmat"};
             reinterpret_cast<Create>(materials_module+sdk::binding_values::material_create)(nullptr,&material_handles[i],names[i],tree,0,true);
         }
         overlay_log(material_handles[0]&&material_handles[1]?"Player chams: visible and depth-independent materials created.":"Player chams: material creation failed; retaining native rendering.");
     }
     std::array<Address,2> result{};
-    const unsigned base=style==1?2:style==3?4:style==4?6:0;
+    const unsigned base=style==5?8:style==6?10:style==1?2:style==3?4:style==4?6:0;
     for(unsigned i=0;i<2;++i){const auto handle=material_handles[base+i]?material_handles[base+i]:material_handles[i];if(handle)result[i]=memory::read<Address>(handle).value_or(0);}
     return result;
 }

@@ -53,7 +53,10 @@ combat::LegitSettings read_legit_settings(const Json& j) {
     if(j.contains("aim_key")&&j["aim_key"].is_number_integer())s.aim_key=static_cast<int>(std::clamp(j["aim_key"].get<double>(),0.,255.));
     for(const auto& c:combat::legit_choices)if(j.contains(c.key)&&j[c.key].is_number_integer())s.*c.member=static_cast<int>(std::clamp(j[c.key].get<double>(),0.,double(c.names.size()-1)));
     const auto read_groups=[&](const char* key,auto& groups){if(j.contains(key)&&j[key].is_array())for(std::size_t i=0;i<groups.size()&&i<j[key].size();++i)if(j[key][i].is_boolean())groups[i]=j[key][i].get<bool>();};
-    read_groups("hitboxes",s.hitboxes);read_groups("trigger_hitboxes",s.trigger_hitboxes);read_groups("multipoint",s.multipoint);return s;
+    if(!j.contains("activation"))s.activation=s.aim_key?2:s.on_fire?1:0;
+    s.reaction_max=std::clamp(std::max(s.reaction_time+1,s.reaction_max),1.f,1000.f);s.reaction_time=std::min(s.reaction_time,s.reaction_max-1);
+    s.trigger_reaction_max=std::clamp(std::max(s.trigger_reaction+1,s.trigger_reaction_max),1.f,1000.f);s.trigger_reaction=std::min(s.trigger_reaction,s.trigger_reaction_max-1);
+    combat::normalize_delays(s);read_groups("hitboxes",s.hitboxes);read_groups("trigger_hitboxes",s.trigger_hitboxes);read_groups("multipoint",s.multipoint);return s;
 }
 Json legit_override(const combat::LegitOverride& v){return {{"enabled",v.enabled},{"settings",legit_settings(v.settings)}};}
 combat::LegitOverride read_legit_override(const Json& j) {
@@ -142,6 +145,8 @@ std::string encode_config(const MenuState& state){
     for(const auto& option:visuals::esp_toggles)teammate[option.key]=target.*option.target;
     teammate["flags"]=target.flags;teammate["layout"]=esp_layout(target.layout);
     visual["box_opacity"]=pv.box_opacity;visual["chams_opacity"]=pv.chams_opacity;visual["chams_material"]=pv.chams_material;visual["material_version"]=2;
+    visual["visible_styles"]=pv.visible_styles;visual["hidden_styles"]=pv.hidden_styles;
+    visual["first_person_material"]=pv.first_person_material;
     visual["box_max_distance"]=pv.box_max_distance;visual["chams_max_distance"]=pv.chams_max_distance;
     for(int team=0;team<2;++team){const char* key=team?"CT":"T";applied["loadouts"][key]=Json::array();for(const auto& s:state.cosmetics.loadouts[team])applied["loadouts"][key].push_back(selection(s));
         j["inventory"]["gloves"][key]=selection(state.inventory.gloves[team]);
@@ -219,6 +224,9 @@ MenuState decode_config(const std::string& text){
       }
       pv.box_visible_only=v.value("box_visible_only",pv.visible_only);
       pv.box_opacity=bounded(v,"box_opacity",1,0,1);pv.chams_opacity=bounded(v,"chams_opacity",1,0,1);pv.chams_material=std::clamp(v.value("chams_material",0),0,4);if(v.value("material_version",1)<2 && pv.chams_material==1)pv.chams_material=0;
+      const auto single=[](int mask){return mask&-mask;};
+      pv.visible_styles=single(static_cast<int>(bounded(v,"visible_styles",0,0,63)));pv.hidden_styles=single(static_cast<int>(bounded(v,"hidden_styles",0,0,63)));
+      pv.first_person_material=static_cast<int>(bounded(v,"first_person_material",1,0,5));
       pv.box_max_distance=bounded(v,"box_max_distance",pv.max_distance,5,500);pv.chams_max_distance=bounded(v,"chams_max_distance",pv.max_distance,5,500);
     }
     f.strafe_assist=c.value("strafe_assist",false)||c.value("air_strafe",false);f.strafe_strength=bounded(c,"strafe_strength",.65f,0,1);
@@ -316,6 +324,9 @@ MenuState decode_config(const std::string& text){
     seed("Visuals/Player/Enabled","enabled",pv.enabled);
     seed("Visuals/Player/Target group: Enemies / Teammates","choice",pv.teammates?1:0);
     seed("Visuals/Player/Glow","enabled",pv.glow);seed("Visuals/Player/ESP items/Visible only","enabled",pv.visible_only);seed("Visuals/Player/ESP items/Box style","choice",pv.box_style);seed("Visuals/Player/ESP items/Weapon style","choice",pv.weapon_mode);seed("Visuals/Player/ESP items/Flag types","selected",pv.flags);
+    seed("Visuals/Player/Glow/Color","color",color(pv.glow_color));seed("Visuals/World/HUD/Radar","enabled",pv.radar);
+    seed("Visuals/Player/Other/Weapon chams","enabled",pv.weapon_chams);seed("Visuals/Player/Other/Hands and gloves","enabled",pv.hands_chams);seed("Visuals/Player/Other/Material","choice",pv.first_person_material);
+    if(pv.visible_styles||pv.hidden_styles){std::array<bool,6> visible{},hidden{};for(unsigned i=0;i<6;++i){visible[i]=(pv.visible_styles&(1<<i))!=0;hidden[i]=(pv.hidden_styles&(1<<i))!=0;}seed("Visuals/Player/Visible chams","selected",visible);seed("Visuals/Player/Hidden chams","selected",hidden);}
     seed("Visuals/Player/ESP items/Distance limit","number",pv.max_distance);seed("Visuals/Player/ESP items/Thickness","number",pv.thickness);seed("Visuals/Player/ESP items/Box opacity","number",pv.box_opacity);seed("Visuals/Player/ESP items/Box distance","number",pv.box_max_distance);
     seed("Visuals/Player/Enemy model / Chams/Visible pass","enabled",pv.chams_visible);seed("Visuals/Player/Enemy model / Chams/Visible only","enabled",pv.chams_visible_only);seed("Visuals/Player/Enemy model / Chams/Opacity","number",pv.chams_opacity);seed("Visuals/Player/Enemy model / Chams/Distance limit","number",pv.chams_max_distance);
     const bool has_visuals=c.contains("player_visuals");
@@ -345,6 +356,7 @@ MenuState decode_config(const std::string& text){
     const std::string removals="Visuals/World/Miscellaneous/Removals/";seed(removals+"Fog","enabled",w.remove_fog);seed(removals+"Shadows","enabled",w.remove_shadows);seed(removals+"Sky","enabled",w.remove_sky);seed(removals+"3D sky","enabled",w.remove_3d_sky);
     seed("Misc/Misc/Movement/Air strafe/Subtick mode","choice",f.movement_options.subtick?1:0);seed("Misc/Misc/Movement/Air strafe/Turn speed","number",f.movement_options.turn_speed);
     seed("Misc/Misc/Movement/Slow walk","enabled",f.movement_options.slow_walk);seed("Misc/Misc/Movement/Standalone quick stop","enabled",f.movement_options.quick_stop);
+    seed("Misc/Misc/Movement/Bunny hop/Humanize","enabled",f.movement_options.humanize);seed("Misc/Misc/Movement/Bunny hop/Chance","number",f.movement_options.chance);seed("Misc/Misc/Movement/Bunny hop/Max jumps","number",f.movement_options.attempt_limit);
     seed("Visuals/World/HUD/Scope overlay: default / lines / none","choice",f.hud.scope_lines?1:f.hud.scope_hide?2:0);seed("Visuals/World/HUD/Scope color","color",color(f.hud.scope_color));seed("Visuals/World/HUD/Scoped crosshair color","color",color(f.hud.crosshair_color));seed("Visuals/World/HUD/Scope gap","number",f.hud.scope_gap);seed("Visuals/World/HUD/Scope length","number",f.hud.scope_length);seed("Visuals/World/HUD/Scope thickness","number",f.hud.scope_thickness);
     for(auto it=tree.begin();it!=tree.end();)if(it.key().starts_with("Combat/Rage"))it=tree.erase(it);else ++it;
     state.preview_tree=tree.dump();
@@ -379,6 +391,8 @@ std::uint64_t state_hash(const MenuState& s){
     bytes(pv.box_style);bytes(pv.weapon_mode);bytes(pv.max_distance);bytes(pv.thickness);bytes(pv.arrow_size);for(bool flag:pv.flags)bytes(flag);
     for(const auto& color:visuals::colors)for(float component:pv.*color.member)bytes(component);
     bytes(pv.box_opacity);bytes(pv.chams_opacity);bytes(pv.chams_material);
+    bytes(pv.visible_styles);bytes(pv.hidden_styles);
+    bytes(pv.first_person_material);
     for(const auto& placement:pv.esp_layout){bytes(placement.side);bytes(placement.order);bytes(placement.anchor);}
     bytes(pv.separate_teammate_esp);for(const auto& option:visuals::esp_toggles)bytes(pv.teammate_esp.*option.target);
     for(bool flag:pv.teammate_esp.flags)bytes(flag);for(const auto& placement:pv.teammate_esp.layout){bytes(placement.side);bytes(placement.order);bytes(placement.anchor);}
