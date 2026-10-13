@@ -11,6 +11,7 @@
 #include "core/features/movement/landing_policy.hpp"
 #include "core/features/movement/command_policy.hpp"
 #include "core/features/player/visuals.hpp"
+#include "core/features/player/camera.hpp"
 #include "core/sdk/experimental_commands.hpp"
 #include "core/sdk/client.hpp"
 #include "core/sdk/entities.hpp"
@@ -473,7 +474,7 @@ void sample_hud() {
         const auto result=reinterpret_cast<Inaccuracy>(state->client+inaccuracy_rva)(weapon,nullptr,nullptr);
         if(std::isfinite(result)&&result>=0)accuracy=std::min(result,1.f);
     }
-    hud_snapshot.store(std::make_shared<const HudSnapshot>(HudSnapshot{read_native<bool>(pawn+f.scoped),accuracy,value>1&&value<179?static_cast<float>(value):90.f,GetTickCount64()}));
+    hud_snapshot.store(std::make_shared<const HudSnapshot>(HudSnapshot{read_native<bool>(pawn+f.scoped),accuracy,cosmetics::camera_fov(value>1&&value<179?static_cast<float>(value):90.f,camera),GetTickCount64()}));
 }
 void safe_process(Address command,bool view) {
     const auto started=std::chrono::steady_clock::now();

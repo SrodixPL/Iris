@@ -39,7 +39,7 @@ void icons(ImFont* font);
 Option& option(ImGuiID id);
 ImGuiID binding(const std::string& path);
 const std::map<ImGuiID,Option>& options();
-bool evaluate(ImGuiID id, bool& value, bool disabled=false);
+bool evaluate(ImGuiID id, bool& value, bool disabled=false, ImGuiID inherited_binding=0);
 bool evaluate(ImGuiID id, double& value, bool disabled=false);
 bool evaluate(ImGuiID id, std::span<bool> value, bool disabled=false);
 void popup(ImGuiID id, Option& option, Bounds row, Bounds button, bool disabled=false, bool boolean=true);

@@ -2,6 +2,7 @@
 #include "core/features/inventory/inventory.hpp"
 #include "core/menu/theme.hpp"
 #include "core/menu/thumbnail_source.hpp"
+#include "core/menu/artwork_download.hpp"
 #include "core/log.hpp"
 #include <wincodec.h>
 #include <algorithm>
@@ -10,14 +11,25 @@ using Microsoft::WRL::ComPtr;
 namespace {
 std::uint64_t key_for(int definition,int paint){return (static_cast<std::uint64_t>(definition)<<32)|static_cast<unsigned>(paint);}
 }
-ImageCache::ImageCache(ID3D11Device* device):device_(device){
-    const auto executable=executable_folder();worker_.push([this,executable]{
-        root_=local_thumbnail_root(executable);
+ImageCache::ImageCache(ID3D11Device* device,bool download_artwork):device_(device),download_artwork_(download_artwork){
+    worker_.push([this]{
+        refresh_artwork();
         overlay_log(root_.empty()?"Local inventory artwork unavailable in the Iris data directory.":
             "Local inventory artwork found in the Iris data directory.");
     });
 }
 ImageCache::~ImageCache(){stopping_=true;}
+void ImageCache::refresh_artwork(){
+    if(stopping_)return;
+    try {
+        const auto data=executable_folder();
+        if(root_.empty())root_=local_thumbnail_root(data);
+        if(!download_artwork_||GetTickCount64()<download_retry_after_)return;
+        if(!root_.empty()&&artwork::complete(root_))return;
+        download_retry_after_=GetTickCount64()+300000;
+        root_=artwork::fetch(data,stopping_);
+    }catch(const std::exception& error){overlay_log(error.what());}
+}
 ImageCache::Image& ImageCache::image(int definition,int paint){
     const auto key=key_for(definition,paint);auto& entry=images_[key];entry.last_frame=ImGui::GetFrameCount();
     if(entry.texture||entry.pending||(entry.missing && GetTickCount64()<entry.retry_after))return entry;
@@ -26,7 +38,7 @@ ImageCache::Image& ImageCache::image(int definition,int paint){
         if(stopping_)return;
         // An injected image can use the Iris data directory rather than a
         // module filename. Retry discovery if artwork was deployed later.
-        if(root_.empty())root_=local_thumbnail_root(executable_folder());
+        if(root_.empty()||local_thumbnail_path(root_,definition,paint).empty())refresh_artwork();
         Pixels result;result.key=key;const auto initialized=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
         try{const bool decoded=[&]{
             const auto path=local_thumbnail_path(root_,definition,paint);

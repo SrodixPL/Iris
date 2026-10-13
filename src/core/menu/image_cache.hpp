@@ -19,10 +19,12 @@ class ImageCache {
     bool preview_interactive_{};
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     std::filesystem::path root_;std::mutex mutex_;std::deque<Pixels> decoded_;
+    bool download_artwork_{};std::uint64_t download_retry_after_{};
     std::unordered_map<std::uint64_t,Image> images_;std::atomic_bool stopping_{};FileWorker worker_;
+    void refresh_artwork();
     Image& image(int definition,int paint);
 public:
-    explicit ImageCache(ID3D11Device* device);
+    explicit ImageCache(ID3D11Device* device,bool download_artwork=false);
     ~ImageCache();
     void pump();
     InventoryArt preview(const cosmetics::PreviewImage& image);

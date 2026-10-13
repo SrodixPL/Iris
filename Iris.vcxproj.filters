@@ -219,6 +219,9 @@
     <ClCompile Include="src\core\features\player\camera.cpp">
       <Filter>src\core\features\player</Filter>
     </ClCompile>
+    <ClInclude Include="src\core\features\player\camera.hpp">
+      <Filter>src\core\features\player</Filter>
+    </ClInclude>
     <ClCompile Include="src\core\features\player\chams.cpp">
       <Filter>src\core\features\player</Filter>
     </ClCompile>
@@ -376,6 +379,15 @@
       <Filter>src\core\menu</Filter>
     </ClCompile>
     <ClInclude Include="src\core\menu\apply_queue.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\menu\artwork_download.cpp">
+      <Filter>src\core\menu</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\artwork_download.hpp">
+      <Filter>src\core\menu</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\menu\artwork_release.hpp">
       <Filter>src\core\menu</Filter>
     </ClInclude>
     <None Include="src\core\menu\assets\NOTICE.md">
@@ -712,6 +724,9 @@
       <Filter>src\ext\safetyhook</Filter>
     </ClInclude>
     <ClInclude Include="src\util\file_hash.hpp">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\https_download.hpp">
       <Filter>src\util</Filter>
     </ClInclude>
     <ClInclude Include="src\util\latest_worker.hpp">

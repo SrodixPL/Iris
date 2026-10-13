@@ -97,6 +97,7 @@ bool check_thread() noexcept {
 
 const char* iris::renderer::last_error_message() noexcept { return last_error(); }
 bool iris::renderer::initialize(HWND window, ID3D11Device* device, ID3D11DeviceContext* context) noexcept {
+    iris::overlay_log("Renderer startup: validating window, device and immediate context.");
     last_error()[0] = '\0';
     if (gui) return fail("Renderer is already initialized");
     if (!IsWindow(window) || !device || !context) return fail("Valid HWND, device and immediate context are required");
@@ -110,11 +111,13 @@ bool iris::renderer::initialize(HWND window, ID3D11Device* device, ID3D11DeviceC
     ContextScope scope(nullptr);
     try {
         IMGUI_CHECKVERSION();
+        iris::overlay_log("Renderer startup: creating ImGui context.");
         gui = ImGui::CreateContext();
         if (!gui) throw std::runtime_error("ImGui context creation failed");
         ImGui::GetIO().IniFilename = nullptr;
         ImGui::GetIO().LogFilename = nullptr;
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+        iris::overlay_log("Renderer startup: initializing menu and fonts.");
         iris::menu::initialize(::menu);
         ::menu.trace = iris::overlay_log;
 #ifdef INVENTORY_UI
@@ -123,16 +126,20 @@ bool iris::renderer::initialize(HWND window, ID3D11Device* device, ID3D11DeviceC
         ::toggle_key.store(::menu.menu_toggle_key);
         ::close_key.store(::menu.menu_close_key);
 #endif
-        ::menu.images=std::make_shared<iris::ui::ImageCache>(device);
+        iris::overlay_log("Renderer startup: starting artwork worker and environment renderer.");
+        ::menu.images=std::make_shared<iris::ui::ImageCache>(device,true);
         iris::cosmetics::start();
         environment_context=context;
         environment_renderer=std::make_unique<iris::EnvironmentRender>(device);
         menu_visible = true;
+        iris::overlay_log("Renderer startup: initializing Win32 backend.");
         win32_ready = ImGui_ImplWin32_Init(window);
         if (!win32_ready) throw std::runtime_error("Win32 backend initialization failed");
+        iris::overlay_log("Renderer startup: initializing DX11 backend and device objects.");
         dx11_ready = ImGui_ImplDX11_Init(device, context);
         if (!dx11_ready || !ImGui_ImplDX11_CreateDeviceObjects())
             throw std::runtime_error("DX11 backend initialization failed");
+        iris::overlay_log("Renderer startup: initializing backdrop.");
         iris::ui::backdrop::initialize(device,context,true,iris::overlay_log);
         host_window = window;
         owner_thread = GetCurrentThreadId();

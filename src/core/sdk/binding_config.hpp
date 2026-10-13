@@ -39,7 +39,10 @@ inline auto read(const std::filesystem::path& path) {
         const auto& value=data.at("bindings").at(entry.group).at(entry.name);
         if(!value.is_number_unsigned())throw std::runtime_error("Iris bindings.json contains an invalid offset type.");
         const auto number=value.get<std::uint64_t>();
-        if(number==0 || number>UINT32_MAX || (std::string_view(entry.group)=="slots" && number>4096))throw std::runtime_error("Iris bindings.json contains an out-of-range offset.");
+        // Reviewed constants include zero offsets and 64-bit identifier masks.
+        // Compare them exactly below. Mutable native RVAs remain nonzero and
+        // bounded to 32 bits; vtable slots retain their separate bound.
+        if((entry.destination && (number==0 || number>UINT32_MAX)) || (std::string_view(entry.group)=="slots" && number>4096))throw std::runtime_error("Iris bindings.json contains an out-of-range offset.");
         if(!entry.destination && number!=entry.compiled)throw std::runtime_error("Iris bindings.json requires a compiled layout update.");
         values[i]=static_cast<std::uintptr_t>(number);
     }

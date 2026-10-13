@@ -68,7 +68,7 @@ struct State {
     std::atomic<WPARAM> escape_consumed{}, close_key_down{};
     std::unique_ptr<hooks::Hook> relative_hook, grab_hook, hide_cursor_hook, warp_hook,keys_hook,motion_hook,buttons_hook,pump_hook;
     std::atomic<std::uint64_t> frame_count{};
-    bool initialized{}, error_reported{}, thread_warning{};
+    bool initialized{}, error_reported{}, thread_warning{}, startup_reported{};
     bool hooks_live{};
     DWORD render_thread{};
     IDXGISwapChain* chain{}; // Non-owning: do not prevent the game's swap chain destruction.
@@ -446,6 +446,7 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
     }
     if (state.initialized && state.chain != chain) release_renderer(state);
     if (!state.initialized) {
+        if(!state.startup_reported){state.startup_reported=true;overlay_log("DX11 startup: acquiring game device, context and render target.");}
         if (FAILED(chain->GetDevice(IID_PPV_ARGS(state.device.ReleaseAndGetAddressOf())))) return;
         state.device->GetImmediateContext(state.context.ReleaseAndGetAddressOf());
         if (!state.context || !create_target(state, chain)) return;
@@ -460,6 +461,7 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
         state.render_thread = GetCurrentThreadId();
         state.depth_context=state.context.Get();
         if(GetModuleHandleW(L"client.dll") && !state.targets_hook){
+            overlay_log("DX11 startup: installing depth and draw hooks.");
             auto** table=*reinterpret_cast<void***>(state.context.Get());
             state.targets_hook=std::make_unique<hooks::Hook>(*state.runtime,table[33],reinterpret_cast<void*>(&targets_detour));
             state.targets_uav_hook=std::make_unique<hooks::Hook>(*state.runtime,table[34],reinterpret_cast<void*>(&targets_uav_detour));
@@ -470,6 +472,7 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
             bind_draw_hooks(state);
             state.targets_hook->enable();state.targets_uav_hook->enable();
             state.clear_depth_hook->enable();
+            overlay_log("DX11 startup: depth and draw hooks enabled.");
         }
         state.error_reported = false;
         overlay_log("ImGui initialized on the game's DX11 Present thread.");

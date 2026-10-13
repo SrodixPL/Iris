@@ -169,7 +169,7 @@ bool owns_key(ImGuiKey key) {
   for(const auto& [id,option] : data) for(const auto& hotkey : option.entries) if(hotkey.key==key) return true;
   return false;
 }
-bool evaluate(ImGuiID id,bool& value,bool disabled) {
+bool evaluate(ImGuiID id,bool& value,bool disabled,ImGuiID inherited_binding) {
   auto& option=data[id];
   if(option.frame==ImGui::GetFrameCount()) return false;
   option.frame=ImGui::GetFrameCount();
@@ -179,7 +179,13 @@ bool evaluate(ImGuiID id,bool& value,bool disabled) {
     // Holds temporarily override the manual switch, then restore that baseline.
     if(!option.was_active || value!=option.last_value)option.baseline=value;
     const Hotkey* held=nullptr;
-    for(auto& hotkey : option.entries) {
+    auto* entries=&option.entries;
+    // Keep the scope's baseline and frame guard independent. Inherited keys
+    // remain owned and serialized only by their original binding.
+    if(inherited_binding && std::none_of(entries->begin(),entries->end(),[](const Hotkey& key){return key.key!=ImGuiKey_None;})) {
+      if(const auto source=data.find(inherited_binding);source!=data.end())entries=&source->second.entries;
+    }
+    for(auto& hotkey : *entries) {
       if(hotkey.key==ImGuiKey_None) { hotkey.active=false; continue; }
       if(hotkey.mode==Mode::Toggle) {
         if(ImGui::IsKeyPressed(hotkey.key,false)) option.baseline=!option.baseline;
@@ -377,6 +383,9 @@ std::map<ImGuiID,Option> decode(const std::string& snapshot) {
 std::string encode(const std::map<ImGuiID,Option>& values) {
   nlohmann::json json={{"hotkey_version",2},{"hotkeys",nlohmann::json::object()}};
   for(const auto& [id,option] : values) {
+    // Evaluation registers unbound controls too. They have nothing to save,
+    // so avoid the catalog validation for these thousands of empty records.
+    if(std::none_of(option.entries.begin(),option.entries.end(),[](const Hotkey& key){return key.key!=ImGuiKey_None;}))continue;
     if(!known_binding(id))continue;
     nlohmann::json entries=nlohmann::json::array();
     for(const auto& hotkey : option.entries) if(hotkey.key!=ImGuiKey_None) entries.push_back({{"key",key_name(hotkey.key)},{"mode",modes[static_cast<int>(hotkey.mode)]},{"value",hotkey.value},{"visible",hotkey.visible},{"number",hotkey.number},{"selection",hotkey.selection}});

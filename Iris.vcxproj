@@ -200,6 +200,7 @@
     <ClCompile Include="src\core\features\player\camera.cpp">
       <ObjectFileName>$(IntDir)src\core\features\player\</ObjectFileName>
     </ClCompile>
+    <ClInclude Include="src\core\features\player\camera.hpp" />
     <ClCompile Include="src\core\features\player\chams.cpp">
       <ObjectFileName>$(IntDir)src\core\features\player\</ObjectFileName>
     </ClCompile>
@@ -319,6 +320,11 @@
       <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\menu\apply_queue.hpp" />
+    <ClCompile Include="src\core\menu\artwork_download.cpp">
+      <ObjectFileName>$(IntDir)src\core\menu\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\menu\artwork_download.hpp" />
+    <ClInclude Include="src\core\menu\artwork_release.hpp" />
     <None Include="src\core\menu\assets\NOTICE.md" />
     <ClInclude Include="src\core\menu\assets\player_mesh.inc" />
     <ClCompile Include="src\core\menu\backdrop.cpp">
@@ -520,6 +526,7 @@
     </ClCompile>
     <ClInclude Include="src\ext\safetyhook\Zydis.h" />
     <ClInclude Include="src\util\file_hash.hpp" />
+    <ClInclude Include="src\util\https_download.hpp" />
     <ClInclude Include="src\util\latest_worker.hpp" />
     <ClInclude Include="src\util\math.hpp" />
     <ClCompile Include="src\util\memory.cpp">

@@ -32,6 +32,11 @@
 namespace iris::cosmetics::detail {
 using namespace iris::sdk;
 struct ViewmodelOverride { Address pawn{}; std::array<float,3> offsets{}; float fov{}; bool fov_override{true}; bool offsets_override{true}; };
+struct CameraFovOverride {
+    Address pawn{},services{};std::uint32_t handle{0xffffffff};
+    int services_offset{},scoped_offset{};
+    float normal_fov{90},scoped_fov{90};bool normal_enabled{},scoped_enabled{};
+};
 struct HudKnife { int team{}; Address vdata{}; };
 struct SavedField { Address address; std::vector<std::byte> bytes; Address scene{}; };
 struct ChangedWeapon {
@@ -137,6 +142,10 @@ struct Runtime {
     std::unique_ptr<hooks::Hook> default_hand_hook;
     DefaultHandModel original_default_hand{};
     std::unique_ptr<hooks::Hook> camera_hook;
+    using CameraView=void(__fastcall*)(void*,std::array<float,3>*,std::array<float,3>*,float*);
+    std::unique_ptr<hooks::Hook> camera_view_hook;
+    CameraView original_camera_view{};
+    std::atomic<std::shared_ptr<const CameraFovOverride>> camera_fov_override;
     std::unique_ptr<hooks::Hook> forward_input_hook,side_input_hook;
     MovementInput original_forward_input{},original_side_input{};
     std::atomic<bool> strafe_trace_seen{};
@@ -209,6 +218,7 @@ void publish_movement(Runtime& state);
 void __fastcall viewmodel_hook(std::array<float,3>* offsets,float* fov,bool clamp);
 void __fastcall pawn_viewmodel_hook(void* pawn,std::array<float,3>* offsets,float* fov);
 void __fastcall camera_hook(void* self,int slot);
+void __fastcall camera_view_hook(void* self,std::array<float,3>* origin,std::array<float,3>* angles,float* fov);
 void restore_camera_fields(Runtime& state);
 void update_camera_fields(Runtime& state);
 int environment_offset(Runtime& state,const char* type,const char* field);

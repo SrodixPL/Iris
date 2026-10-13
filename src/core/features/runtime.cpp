@@ -8,6 +8,7 @@
 #include "core/features/player/visuals.hpp"
 #include "core/features/player/esp/pipeline.hpp"
 #include "core/features/player/visual_native.hpp"
+#include "core/sdk/player_bindings.hpp"
 namespace iris::cosmetics::detail {
 // The overlay already pins the DLL. This hook/trampoline also remains valid until
 // process exit: stop restores state on the game thread and leaves it forwarding.
@@ -218,6 +219,11 @@ void bind(Runtime& state) {
     state.original_default_hand = state.default_hand_hook->original<DefaultHandModel>();
     state.camera_hook = std::make_unique<hooks::Hook>(*state.hooks, reinterpret_cast<void*>(state.client + bindings::camera_think), reinterpret_cast<void*>(&camera_hook));
     state.original_camera_think = state.camera_hook->original<CameraThink>();
+    const auto camera_table=state.client+player_bindings::camera_services_vtable;
+    if(get<Address>(camera_table+iris::sdk::binding_values::slots_camera_calculate_view*sizeof(Address))!=state.client+player_bindings::camera_calculate_view)
+        throw std::runtime_error("Camera presentation callback differs from the reviewed build.");
+    state.camera_view_hook=std::make_unique<hooks::Hook>(*state.hooks,reinterpret_cast<void*>(state.client+player_bindings::camera_calculate_view),reinterpret_cast<void*>(&camera_view_hook));
+    state.original_camera_view=state.camera_view_hook->original<Runtime::CameraView>();
     state.forward_input_hook=std::make_unique<hooks::Hook>(*state.hooks,reinterpret_cast<void*>(state.client+bindings::movement_forward),reinterpret_cast<void*>(&forward_input_hook));
     state.side_input_hook=std::make_unique<hooks::Hook>(*state.hooks,reinterpret_cast<void*>(state.client+bindings::movement_side),reinterpret_cast<void*>(&side_input_hook));
     state.original_forward_input=state.forward_input_hook->original<MovementInput>();
@@ -258,6 +264,7 @@ void bind(Runtime& state) {
     state.glove_update_hook->enable();
     state.default_hand_hook->enable();
     state.camera_hook->enable();
+    state.camera_view_hook->enable();
     state.forward_input_hook->enable();state.side_input_hook->enable();
     state.viewmodel_hook->enable();state.pawn_viewmodel_hook->enable();
     nospread::bind(state.client,state.schema_scope,*state.hooks);
@@ -387,6 +394,7 @@ void stop() noexcept {
     visuals::native::stop();
     state.strafe_axis=0;
     state.viewmodel_override.store(nullptr);
+    state.camera_fov_override.store(nullptr);
     state.accept_enabled=false;state.killfeed_enabled=false;
     state.camera_enabled = false;
 }

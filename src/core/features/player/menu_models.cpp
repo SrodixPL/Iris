@@ -54,8 +54,11 @@ void update_menu_models(Runtime& state) {
             state.menu_preview_players.emplace(identity.handle,address);
             const auto team=get<std::uint8_t>(address+state.fields.team);
             const auto side=team==2?0:1;
-            const auto* agent=find_agent(state.requested.agents[side]);
-            const std::string desired=state.requested.enabled ? (!state.requested.custom_models[side].empty()?state.requested.custom_models[side]:agent?agent->model:"") : "";
+            // Catalog agents are equipped through the local owned inventory.
+            // The game publishes that selection to the local lobby preview;
+            // applying it to every PreviewPlayer also changes party members
+            // and lets their default CT team overwrite a selected T agent.
+            const std::string desired=state.requested.enabled ? state.requested.custom_models[side] : "";
             auto saved=state.menu_players.find(identity.handle);
             if(desired.empty()){
                 if(saved!=state.menu_players.end()){

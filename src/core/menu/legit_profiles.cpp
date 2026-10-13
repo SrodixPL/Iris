@@ -73,6 +73,19 @@ void reveal(MenuRuntime& state,const char* path) {
 }
 ImGuiID binding(const char* path,int category=-1,int weapon=0) {return hotkeys::binding(binding_path(path,category,weapon));}
 ImGuiID selected_binding(const char* path) {return binding(path,scope.category,scope.weapon);}
+ImGuiID inherited_trigger_binding(combat::LegitProfileSet& set,int category,int weapon) {
+    constexpr const char* path="Combat/Legit/Triggerbot/Enable";
+    if(category<0&&!weapon)return 0;
+    if(const auto* item=combat::legit_weapon(weapon)) {
+        const auto parent=static_cast<int>(item->category);
+        if(set.categories[parent].enabled) {
+            const auto id=binding(path,parent,0);
+            const auto& keys=hotkeys::option(id).entries;
+            if(std::any_of(keys.begin(),keys.end(),[](const auto& key){return key.key!=ImGuiKey_None;}))return id;
+        }
+    }
+    return binding(path);
+}
 template<class F> void each_scope(combat::LegitProfileSet& set,F&& visit) {
     visit(set.global,-1,0);
     for(int category=0;category<static_cast<int>(set.categories.size());++category)
@@ -118,8 +131,9 @@ bool synchronize_hotkeys(MenuRuntime& state) {
                 const auto binding=[&](const char* path){return legit_profiles::binding(path,category,weapon);};
                 for(const auto& field:combat::legit_toggles){if(!exposed(toggle_path(field.key)))continue;
                     auto& option=hotkeys::option(binding(toggle_path(field.key)));
-                    const auto held=std::any_of(option.entries.begin(),option.entries.end(),[](const auto& key){return key.mode!=hotkeys::Mode::Toggle&&key.active;});
-                    if(!held)continue;
+                    // Boolean evaluation records held state for inherited keys
+                    // too; those keys need not exist in this scope's own list.
+                    if(!option.was_active)continue;
                     const bool value=option.baseline;changed|=values.*field.member!=value;values.*field.member=value;
                 }
                 for(const auto& field:combat::legit_numbers){if(!exposed(number_path(field.key)))continue;
@@ -363,7 +377,7 @@ void evaluate(MenuRuntime& state) {
     each_scope(*set,[&](combat::LegitSettings& value,int category,int weapon){
         const auto binding=[&](const char* path){return legit_profiles::binding(path,category,weapon);};
         bool changed=false;
-        for(const auto& field:combat::legit_toggles){if(!exposed(toggle_path(field.key)))continue;const auto id=binding(toggle_path(field.key));auto& option=hotkeys::option(id);option.kind=hotkeys::Kind::Boolean;const auto key=std::string_view(field.key);const bool inactive=key=="standalone_recoil"?!value.recoil_control:key=="visualize_fov"?!value.enabled:false;changed|=hotkeys::evaluate(id,value.*field.member,!model.master_enabled||inactive);}
+        for(const auto& field:combat::legit_toggles){if(!exposed(toggle_path(field.key)))continue;const auto id=binding(toggle_path(field.key));auto& option=hotkeys::option(id);option.kind=hotkeys::Kind::Boolean;const auto key=std::string_view(field.key);const bool inactive=key=="standalone_recoil"?!value.recoil_control:key=="visualize_fov"?!value.enabled:false;const auto inherited=key=="trigger"?inherited_trigger_binding(*set,category,weapon):0;changed|=hotkeys::evaluate(id,value.*field.member,!model.master_enabled||inactive,inherited);}
         for(const auto& field:combat::legit_numbers){if(!exposed(number_path(field.key)))continue;const auto id=binding(number_path(field.key));auto& option=hotkeys::option(id);const double multiplier=percent_field(field.key)?100.:1.;option.kind=hotkeys::Kind::Number;option.minimum=field.low*multiplier;option.maximum=field.high*multiplier;double number=(value.*field.member)*multiplier;const auto path=std::string_view(number_path(field.key));const bool inactive=path.starts_with("Combat/Legit/RCS")?!value.recoil_control:path.starts_with("Combat/Legit/Triggerbot")?!value.trigger:!value.enabled;if(hotkeys::evaluate(id,number,!model.master_enabled||inactive)){value.*field.member=static_cast<float>(number/multiplier);changed=true;}}
         for(const auto& field:combat::legit_choices){if(!exposed(choice_path(field.key)))continue;const auto id=binding(choice_path(field.key));auto& option=hotkeys::option(id);option.kind=hotkeys::Kind::Selection;option.minimum=0;option.maximum=static_cast<double>(field.names.size()-1);option.choices.assign(field.names.begin(),field.names.end());option.choice_disabled.assign(field.names.size(),false);double number=value.*field.member;if(hotkeys::evaluate(id,number,!model.master_enabled)){value.*field.member=std::clamp(static_cast<int>(number),0,static_cast<int>(field.names.size())-1);changed=true;}}
         for(const auto& item:{std::pair{hitbox_path,&value.hitboxes},std::pair{trigger_hitbox_path,&value.trigger_hitboxes},std::pair{multipoint_path,&value.multipoint}}){if(!exposed(item.first))continue;const auto id=binding(item.first);auto& option=hotkeys::option(id);option.kind=hotkeys::Kind::Multi;option.choices={"Head","Chest","Stomach","Pelvis","Arms","Legs"};option.choice_disabled.assign(6,false);changed|=hotkeys::evaluate(id,*item.second,!model.master_enabled||(std::string_view(item.first)==trigger_hitbox_path?!value.trigger:!value.enabled));}

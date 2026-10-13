@@ -94,7 +94,7 @@ void process_view(Address command,bool camera_frame=true) {
     player_alive=pawn && read_native<int>(pawn+f.health)>0;
     if(!player_alive){hud_snapshot.store(nullptr);reset_view();return;}
     const auto camera=read_native<Address>(pawn+f.camera);const auto view_fov=camera?read_native<unsigned>(camera+f.camera_fov):90u;
-    camera_fov=view_fov>1 && view_fov<179?static_cast<float>(view_fov):90.f;
+    camera_fov=cosmetics::camera_fov(view_fov>1 && view_fov<179?static_cast<float>(view_fov):90.f,camera);
     if(round_frozen){reset_view();return;}
     const auto cmd=read_native<Command>(command);if(!cmd.base)return;const auto base=read_native<Base>(cmd.base);
     state->observed_command=cmd.number;state->observed_legacy=base.command_number;state->observed_seed=base.random_seed;state->observed_history=cmd.history.size;state->observed_presence=base.has;
