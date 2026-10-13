@@ -69,7 +69,7 @@ bool draw(MenuRuntime& menu,const visuals::Settings& input,State& state,visuals:
             if(element==Element::Box)d->AddRect(lo,hi,ImGui::GetColorU32(theme::accent),0,0,2*s);
             else d->AddRect(a,b,ImGui::GetColorU32(theme::accent),theme::control_radius*s);
             ImGui::SetMouseCursor(layout_id<elements.size()?ImGuiMouseCursor_ResizeAll:ImGuiMouseCursor_Hand);
-            ImGui::SetTooltip(layout_id<elements.size()?"Drag to reposition; click to edit %s":"Edit %s",label(element));
+            widgets::tooltipf(layout_id<elements.size()?"Drag to reposition; click to edit %s":"Edit %s",label(element));
         }
         ImGui::PopID();ImGui::SetCursorScreenPos(cursor);
     };
@@ -87,7 +87,7 @@ bool draw(MenuRuntime& menu,const visuals::Settings& input,State& state,visuals:
         const auto cursor=ImGui::GetCursorScreenPos();ImGui::SetCursorScreenPos({lo.x+4*s,lo.y+4*s});ImGui::InvisibleButton("rotate_model",{std::max(1.f,hi.x-lo.x-8*s),std::max(1.f,hi.y-lo.y-8*s)});
         state.rotating=state.dragging<0&&!widgets::popup_closing()&&ImGui::IsItemActive()&&ImGui::IsMouseDragging(0);
         if(state.rotating){const auto delta=ImGui::GetIO().MouseDelta;state.yaw=std::remainder(state.yaw+delta.x*.6f,360.f);state.pitch=std::clamp(state.pitch+delta.y*.4f,-30.f,30.f);}
-        if(ImGui::IsItemHovered())ImGui::SetTooltip("Drag player to rotate");ImGui::SetCursorScreenPos(cursor);
+        if(ImGui::IsItemHovered())widgets::tooltipf("Drag player to rotate");ImGui::SetCursorScreenPos(cursor);
     }
     if(state.dragging>=0){
         if(ImGui::IsKeyPressed(ImGuiKey_Escape,false)||!updated_layout||(ImGui::GetCurrentContext()->CurrentItemFlags&ImGuiItemFlags_Disabled)){state.dragging=-1;}

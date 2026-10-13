@@ -35,7 +35,7 @@ void overlay_log(const char* message) noexcept {
 #ifdef IRIS_DEBUG
         if (console != INVALID_HANDLE_VALUE) WriteFile(console, line, count, &written, nullptr);
 #endif
-        const auto directory = module::folder() / L"logs";
+        const auto directory = module::data_folder() / L"logs";
         std::filesystem::create_directories(directory);
         const auto path = directory / (L"iris-" + std::to_wstring(GetCurrentProcessId()) + L".log");
         const HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,

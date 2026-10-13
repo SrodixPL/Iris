@@ -41,7 +41,7 @@ void reset_view() {
     state->trigger_plans.clear();
     legit_weapon_definition=0;
     state->legit_decision.reset();
-    state->view_plan.reset();state->view_generation.reset();state->recoil={};state->locked_target=0;state->smooth_rates={};state->view_pawn=state->view_weapon=0;state->last_view={};state->shot_confirmation.reset();state->trigger_confirmation.reset();state->last_trigger={};
+    state->view_plan.reset();state->view_generation.reset();state->recoil={};state->locked_target=0;state->smooth_rates={};state->view_pawn=state->view_weapon=0;state->last_view={};state->shot_confirmation.reset();state->trigger_seen=0;++state->trigger_epoch;state->aim_worker.cancel();state->trigger_worker.cancel();state->last_trigger={};
 }
 bool apply_view(Address proto,const ViewPlan& plan,Transaction* transient=nullptr) {
     if(stopped)return false;
@@ -121,6 +121,7 @@ void process_view(Address command,bool camera_frame=true) {
     const float dt=state->last_view.time_since_epoch().count()?std::chrono::duration<float>(now-state->last_view).count():0;
     state->last_view=now;state->view_pawn=pawn;state->view_weapon=weapon;state->view_pawn_handle=pawn_handle;state->view_weapon_handle=weapon_handle;state->view_plan.reset();
     state->view_generation=snapshot;
+    const combat::workers::Identity worker_identity{snapshot,pawn_handle,weapon_handle,cmd.number,std::chrono::duration<double,std::milli>(now.time_since_epoch()).count()};
     const auto buttons=read_native<Buttons>(base.buttons).value|cmd.value;
     bool firing=(buttons&attack)!=0 || ((cmd.has&0x20) && cmd.attack_history>=0 && cmd.attack_history<cmd.history.size),using_item=(buttons&((1ull<<5)|(1ull<<11)))!=0;
     for(int i=0;i<base.moves.size;++i) {
@@ -146,41 +147,52 @@ void process_view(Address command,bool camera_frame=true) {
         sent=state->recoil.update(look,recoil_punch,firing && ls.recoil_control && (ls.standalone_recoil||aim_enabled),ls.recoil_strength);
         if(aim_enabled && (ls.aim_mode==1||ls.activation!=1||firing)) {
             const auto eye=position(pawn);const auto team=read_native<std::uint8_t>(pawn+f.team);float nearest=181;bool locked=false;int preference=-1;float best_score=-1;
-            struct Candidate {std::uint32_t handle{};Address entity{};Vector point{};float angle{};int rank{};bool locked{};};
+            struct Candidate {std::uint32_t handle{};Address entity{};Vector point{};float angle{};int rank{};bool locked{};unsigned ordinal{};float score{};int region{};};
+            std::vector<Candidate> candidates;
             std::vector<Candidate> chance_candidates;
             combat::QueryBudget visibility_budget(256);
-            for(int i=1;i<=64;++i) {
+            for(int i=1;i<=64&&candidates.size()<1024;++i) {
                 const auto other=controller_at(i);
                 if(!other || other==controller || read_native<bool>(other+f.hltv))continue;
                 const auto candidate_handle=read_native<std::uint32_t>(other+f.player_pawn);const auto candidate=sdk::entity(state->client,candidate_handle);
                 if(!candidate || candidate==pawn || read_native<int>(candidate+f.health)<=0 || read_native<bool>(candidate+f.immune) || read_native<std::uint8_t>(candidate+f.team)==team)continue;
                 const auto scene=read_native<Address>(candidate+f.scene);if(!scene || read_native<bool>(scene+f.dormant))continue;
-                for(const auto& hitbox:hitbox_points(scene,std::any_of(ls.multipoint.begin(),ls.multipoint.end(),[](bool value){return value;}),.5f,true))if(ls.hitboxes[hitbox.region]) {
+                unsigned point_ordinal{};
+                for(const auto& hitbox:hitbox_points(scene,std::any_of(ls.multipoint.begin(),ls.multipoint.end(),[](bool value){return value;}),.5f,true)) {
+                    const auto ordinal=point_ordinal++;if(!ls.hitboxes[hitbox.region]||candidates.size()>=1024)continue;
                     if(hitbox.secondary&&!ls.multipoint[hitbox.region])continue;
                     if(ls.only_body&&(hitbox.region==0||hitbox.region>=4))continue;
-                    if(angular_distance(bullet(look,{}),hitbox.point-eye)>ls.effective_fov(camera_fov)*.5f)continue;
-                    if(ls.smoke_check){if(!visibility_budget.take())continue;if(smoke_obstructed(eye,hitbox.point))continue;}
+                    const auto distance=angular_distance(bullet(look,{}),hitbox.point-eye);
+                    if(distance>ls.effective_fov(camera_fov)*.5f)continue;
+                    if(ls.target_selection==1&&ls.smoke_check){if(!visibility_budget.take())continue;if(smoke_obstructed(eye,hitbox.point))continue;}
                     const bool preferred=ls.target_lock && candidate_handle==state->locked_target;
                     // When both preferences are selected, both preferred regions
                     // compete by crosshair distance. Body-only remains a filter.
                     const int rank=(ls.prefer_head&&hitbox.region==0)||(ls.prefer_body&&hitbox.region>=1&&hitbox.region<=3)?1:0;
-                    const auto distance=angular_distance(bullet(look,{}),hitbox.point-eye);
                     float score=0;
                     if(ls.target_selection==1){if(!visibility_budget.take())continue;score=shot_damage(pawn,weapon,candidate,eye,hitbox.point,hitbox.region,ls.through_walls);if(score<=0)continue;}
-                    if(ls.target_selection!=0&&((locked&&!preferred)||(preferred==locked&&(rank<preference||(rank==preference&&(ls.target_selection==1?(score<best_score||(score==best_score&&distance>=nearest)):distance>=nearest))))))continue;
-                    if(ls.target_selection!=1){if(!visibility_budget.take())continue;if(ls.through_walls?shot_damage(pawn,weapon,candidate,eye,hitbox.point,hitbox.region,true)<=0:!visible(pawn,candidate,eye,hitbox.point))continue;}
-                    if(ls.target_selection==0){
-                        auto found=std::find_if(chance_candidates.begin(),chance_candidates.end(),[&](const auto& value){return value.handle==candidate_handle;});
-                        if(found==chance_candidates.end())chance_candidates.push_back({candidate_handle,candidate,hitbox.point,distance,rank,preferred});
-                        else if(rank>found->rank||(rank==found->rank&&distance<found->angle))*found={candidate_handle,candidate,hitbox.point,distance,rank,preferred};
-                    }else{locked=preferred;preference=rank;best_score=score;nearest=distance;handle=candidate_handle;point=hitbox.point;}
+                    candidates.push_back({candidate_handle,candidate,hitbox.point,distance,rank,preferred,ordinal,score,hitbox.region});
                 }
+            }
+            combat::workers::AimInput job;job.identity=worker_identity;job.selection=ls.target_selection;job.locked=state->locked_target;
+            std::unordered_map<std::uint64_t,std::size_t> indices;
+            for(std::size_t i=0;i<candidates.size();++i){const auto& c=candidates[i];job.candidates.push_back({c.handle,c.ordinal,c.angle,c.score,c.rank,c.locked});indices.emplace((std::uint64_t{c.handle}<<32)|c.ordinal,i);}
+            state->aim_worker.submit(std::move(job));
+            const auto ranked=state->aim_worker.result();const bool ranking_ready=ranked&&ranked->locked==state->locked_target&&combat::workers::current(ranked->identity,worker_identity);
+            if(ranking_ready)for(const auto& hint:ranked->candidates){
+                const auto found=indices.find((std::uint64_t{hint.handle}<<32)|hint.ordinal);if(found==indices.end())continue;
+                const auto& c=candidates[found->second];
+                if(ls.target_selection!=1){
+                    if(ls.smoke_check){if(!visibility_budget.take())break;if(smoke_obstructed(eye,c.point))continue;}
+                    if(!visibility_budget.take())break;
+                    if(ls.through_walls?shot_damage(pawn,weapon,c.entity,eye,c.point,c.region,true)<=0:!visible(pawn,c.entity,eye,c.point))continue;
+                }
+                if(ls.target_selection==0){if(std::none_of(chance_candidates.begin(),chance_candidates.end(),[&](const auto& previous){return previous.handle==c.handle;}))chance_candidates.push_back(c);if(chance_candidates.size()==4)break;}
+                else {locked=c.locked;preference=c.rank;best_score=c.score;nearest=c.angle;handle=c.handle;point=c.point;break;}
             }
             if(ls.target_selection==0&&!chance_candidates.empty()){
                 // Reuse the reviewed spread function with deterministic sample
                 // identities. This is a bounded estimate, not server acceptance.
-                std::sort(chance_candidates.begin(),chance_candidates.end(),[](const auto& a,const auto& b){if(a.locked!=b.locked)return a.locked>b.locked;if(a.rank!=b.rank)return a.rank>b.rank;return a.angle<b.angle;});
-                if(chance_candidates.size()>4)chance_candidates.resize(4);
                 using Inaccuracy=float(__fastcall*)(Address,float*,float*);using BaseSpread=float(__fastcall*)(Address);
                 using Spread=void(__fastcall*)(std::int16_t,int,int,std::uint32_t,float,float,float,float*,float*);
                 state->native_stage="Legit selection accuracy";
@@ -206,7 +218,7 @@ void process_view(Address command,bool camera_frame=true) {
                 if(const auto desired=aim(eye,point)) {
                     const auto goal=ls.recoil_control?*desired-recoil_punch*ls.recoil_strength:*desired;
                     if(dt>0&&std::isfinite(dt)){
-                        const float step_time=std::min(dt,.05f);const Vector delta{goal.x-sent.x,std::remainder(goal.y-sent.y,360.f),0};
+                        const float step_time=combat::workers::frame_step(dt);const Vector delta{goal.x-sent.x,std::remainder(goal.y-sent.y,360.f),0};
                         Vector step{};
                         if(ls.aim_mode==1)step=combat::assist_step(delta,user,ls.assist_strength,step_time,ls.effective_fov(camera_fov)*.5f);
                         else {
@@ -223,7 +235,7 @@ void process_view(Address command,bool camera_frame=true) {
                 }
             } else {legit_status=handle?"Waiting for target delay":"No visible target inside FOV";handle=0;}
             if(!handle && !state->locked_target)state->acquired={};
-            if(!handle && nearest==181)state->locked_target=0;
+            if(ranking_ready&&!handle && nearest==181)state->locked_target=0;
         } else {state->locked_target=0;legit_status=ls.enabled?(aim_key_held?"Waiting for fire":"Waiting for aim key"):"Recoil control only";}
     } else {state->recoil={};state->locked_target=0;legit_status=rage_active()?"Rage takes priority":"Disabled";}
     if(camera_frame && !rage_active() && loaded && !using_item) {
@@ -285,8 +297,12 @@ void process_view(Address command,bool camera_frame=true) {
             }
         }
         if(ls.trigger&&pellets!=1)legit_status="Shotgun Trigger unavailable";
-        if(trigger_confirmed&&state->trigger_confirmation.target!=trigger_confirmed)state->trigger_delay=combat::sampled_delay(ls.trigger_reaction,ls.trigger_reaction_max,static_cast<std::uint32_t>(cmd.number)^trigger_confirmed^0x63d83595u);
-        const bool trigger_ready=state->trigger_confirmation.ready(trigger_blocked?0:trigger_confirmed,std::chrono::duration<double,std::milli>(now.time_since_epoch()).count(),state->trigger_delay+delay);
+        if(trigger_confirmed&&state->trigger_seen!=trigger_confirmed)state->trigger_delay=combat::sampled_delay(ls.trigger_reaction,ls.trigger_reaction_max,static_cast<std::uint32_t>(cmd.number)^trigger_confirmed^0x63d83595u);
+        const auto trigger_target=ls.trigger&&!trigger_blocked?trigger_confirmed:0;
+        if(state->trigger_seen!=trigger_target){state->trigger_seen=trigger_target;++state->trigger_epoch;state->trigger_worker.cancel();}
+        state->trigger_worker.submit({worker_identity,state->trigger_epoch,trigger_target,state->trigger_delay+delay});
+        const auto trigger_result=state->trigger_worker.result();
+        const bool trigger_ready=trigger_result&&trigger_result->epoch==state->trigger_epoch&&trigger_result->target==trigger_target&&combat::workers::current(trigger_result->identity,worker_identity)&&trigger_result->ready;
         const bool interval_ready=!state->last_trigger.time_since_epoch().count()||std::chrono::duration<float,std::milli>(now-state->last_trigger).count()>=ls.trigger_interval;
         if(cmd.history.size>0){
             if(aim_enabled&&firing&&(delay>0||blocked)&&!ready){firing_intent(command,cmd,base,false);firing=false;legit_status=blocked?"Assistance paused":"Waiting for shot confirmation";}

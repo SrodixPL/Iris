@@ -7,4 +7,7 @@ bool owns(const void* address) noexcept;
 bool pin() noexcept;
 HMODULE base() noexcept;
 std::filesystem::path folder();
+std::filesystem::path data_folder();
+void migrate_data();
+std::filesystem::path data_folder_for(const std::filesystem::path& executable);
 }

@@ -1,4 +1,5 @@
 #include "core/features/runtime.hpp"
+#include "core/features/inventory/weapon_mesh.hpp"
 
 namespace iris::cosmetics::detail {
 namespace {
@@ -19,6 +20,7 @@ void restore_inventory_views(Runtime& state) {
     // Restore the old renderer's entity fields before a loadout change or item
     // retirement. Native stock views keep ownership of their private copies;
     // no SOCache pointer is installed in an entity or menu texture callback.
+    restore_hud_weapon_meshes(state);
     restore_glove(state);
     for(auto it=state.changed.begin();it!=state.changed.end();) {
         restore(state,it->second);it=state.changed.erase(it);

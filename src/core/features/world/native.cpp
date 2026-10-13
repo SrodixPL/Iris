@@ -35,6 +35,10 @@ Smoke smoke_original{};
 SmokePrepare smoke_prepare_original{};
 Address scene{},queue{};
 
+// These copies borrow only the object passed by the reviewed synchronous
+// native callback. No pointer or temporary override escapes that callback.
+template<class T> std::optional<T> borrow(Address address){T value{};if(!memory::read_local(address,std::as_writable_bytes(std::span{&value,std::size_t{1}})))return {};return value;}
+template<class T> bool replace(Address address,const T& value){return memory::write_local(address,std::as_bytes(std::span{&value,std::size_t{1}}));}
 std::shared_ptr<const cosmetics::Environment> current() {
     return active.load() ? settings.load() : nullptr;
 }
@@ -51,10 +55,10 @@ void fog_flag(void* map,int value) {
     auto* integers=reinterpret_cast<void*>(address+wb::integer_map);
     const int previous=integer_get(integers,0x6e0fad7e,0);
     if(previous==value)return;
-    const auto hash=memory::read<std::uint64_t>(address+wb::permutation_hash);if(!hash)return;
+    const auto hash=borrow<std::uint64_t>(address+wb::permutation_hash);if(!hash)return;
     integer_set(integers,0x6e0fad7e,value);
     // The raw setter does not update the shader permutation key; native fog does.
-    (void)memory::write(address+wb::permutation_hash,*hash^fog_flag_hash(previous)^fog_flag_hash(value));
+    (void)replace(address+wb::permutation_hash,*hash^fog_flag_hash(previous)^fog_flag_hash(value));
 }
 bool parameter(const cosmetics::Environment& w,std::uint32_t hash,Vector& value) {
     if(w.fog || w.remove_fog){
@@ -110,28 +114,28 @@ Address __fastcall fog_hook(void* map,void* mode) {
 void __fastcall aggregate_hook(Address owner,Address context,Address object) {
     aggregate_original(owner,context,object);
     auto w=current();if(!w || !w->world_override || !object)return;
-    const auto data=memory::read<Address>(object+8).value_or(0);
-    const auto output=memory::read<Address>(queue).value_or(0);
-    const auto base=output ? memory::read<Address>(output+iris::sdk::binding_values::layout_post_output).value_or(0) : 0;
-    const auto end=output ? memory::read<Address>(output+8).value_or(0) : 0;
+    const auto data=borrow<Address>(object+8).value_or(0);
+    const auto output=borrow<Address>(queue).value_or(0);
+    const auto base=output ? borrow<Address>(output+iris::sdk::binding_values::layout_post_output).value_or(0) : 0;
+    const auto end=output ? borrow<Address>(output+8).value_or(0) : 0;
     if(!data || !base)return;
-    const int count=memory::read<int>(data+4).value_or(0),index=memory::read<int>(data+wb::aggregate_index).value_or(-1);
+    const int count=borrow<int>(data+4).value_or(0),index=borrow<int>(data+wb::aggregate_index).value_or(-1);
     if(count<=0 || count>65536 || index<0 || index>4194304-count)return;
     if(end<base || (static_cast<Address>(index)+count)*wb::record_stride>end-base)return;
     for(int i=0;i<count;++i){
         const Address address=base+(static_cast<Address>(index)+i)*wb::record_stride;
-        auto color=memory::read<std::array<std::uint8_t,4>>(address);if(!color)break;
+        auto color=borrow<std::array<std::uint8_t,4>>(address);if(!color)break;
         for(int c=0;c<3;++c)(*color)[c]=static_cast<std::uint8_t>(std::clamp((*color)[c]*w->world_color[c],0.f,255.f));
-        (void)memory::write(address,*color);
+        (void)replace(address,*color);
     }
 }
 Address __fastcall light_hook(Address owner,Address object,Address context) {
     auto w=current();if(!w || !w->lighting_override || !object)return light_original(owner,object,context);
-    const auto baseline=memory::read<std::array<float,3>>(object+wb::light_color);if(!baseline)return light_original(owner,object,context);
+    const auto baseline=borrow<std::array<float,3>>(object+wb::light_color);if(!baseline)return light_original(owner,object,context);
     auto color=*baseline;for(int i=0;i<3;++i)color[i]*=w->lighting_color[i]*w->lighting_intensity;
-    if(!memory::write(object+wb::light_color,color))return light_original(owner,object,context);
+    if(!replace(object+wb::light_color,color))return light_original(owner,object,context);
     const auto result=light_original(owner,object,context);
-    if(memory::read<std::array<float,3>>(object+wb::light_color)==color)(void)memory::write(object+wb::light_color,*baseline);
+    if(borrow<std::array<float,3>>(object+wb::light_color)==color)(void)replace(object+wb::light_color,*baseline);
     return result;
 }
 void __fastcall smoke_hook(Address a,Address b,int c,int d,Address e,Address f) {
@@ -141,11 +145,11 @@ void __fastcall smoke_hook(Address a,Address b,int c,int d,Address e,Address f) 
 void __fastcall smoke_prepare_hook(Address object) {
     auto w=current();
     if(!w || !w->smoke_override){smoke_prepare_original(object);return;}
-    const auto original=memory::read<std::array<float,3>>(object+wb::smoke_color);
+    const auto original=borrow<std::array<float,3>>(object+wb::smoke_color);
     auto color=w->smoke_color;for(auto& channel:color)channel*=255.f;
-    const bool written=original && memory::write(object+wb::smoke_color,color);
+    const bool written=original && replace(object+wb::smoke_color,color);
     smoke_prepare_original(object);
-    if(written && memory::read<std::array<float,3>>(object+wb::smoke_color)==color)(void)memory::write(object+wb::smoke_color,*original);
+    if(written && borrow<std::array<float,3>>(object+wb::smoke_color)==color)(void)replace(object+wb::smoke_color,*original);
 }
 template<class T> void install(hooks::Runtime& runtime,Address target,void* callback,T& original) {
     auto hook=std::make_unique<hooks::Hook>(runtime,reinterpret_cast<void*>(target),callback);

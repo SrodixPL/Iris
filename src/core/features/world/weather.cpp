@@ -44,8 +44,8 @@ void update_weather(Runtime& state){
     }
     if(GetTickCount64()>=state.weather_retry)while(state.weather_particles.size()<count){
         std::uint32_t index=0xffffffff;
-        const char* effect=settings.weather==1?"particles/iris/rain_v1.vpcf":"particles/iris/snow_v1.vpcf";
-        const auto root=models::game_content()/"particles/iris";
+        const char* effect=settings.weather==1?"iris/particles/rain_v1.vpcf":"iris/particles/snow_v1.vpcf";
+        const auto root=models::game_content()/"iris/particles";
         install_weather_asset(root/"rain_v1.vpcf_c",weather_assets::rain);
         install_weather_asset(root/"snow_v1.vpcf_c",weather_assets::snow);
         const auto resource=load_resource(state,effect,0x66637076);

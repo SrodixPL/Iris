@@ -30,7 +30,7 @@ Value& value(int index) {
   auto [it,inserted]=values.try_emplace(index);
   if(inserted) {it->second.number=nodes[index].initial;const auto c=feature_switches::default_color(nodes[index].path);it->second.color={c[0],c[1],c[2],c[3]};}
   if(inserted && std::string_view(nodes[index].path)=="Visuals/Player/ESP items/Flag types"){const auto defaults=visuals::Settings{}.flags;std::copy(defaults.begin(),defaults.end(),it->second.selections.begin());}
-  if(inserted && std::string_view(nodes[index].path)=="Visuals/Player/Enemy model / Chams/Visible pass")it->second.enabled=true;
+  if(inserted && (std::string_view(nodes[index].path)=="Visuals/Player/Enemy model / Chams/Visible pass"||std::string_view(nodes[index].path)=="Visuals/World/World ESP/Weapons/Text"||std::string_view(nodes[index].path)=="Visuals/World/World ESP/Bomb/Text"))it->second.enabled=true;
   if(inserted && std::string_view(nodes[index].path)=="Visuals/Player/Other/Material")it->second.choice=1;
   return it->second;
 }
@@ -43,7 +43,7 @@ std::vector<widgets::Option> options(const Node& node,std::vector<std::string>& 
 int find(std::string_view path) { for(int i=0;i<std::size(nodes);++i)if(path==nodes[i].path)return i;return -1; }
 Page page_for(int index) {
   const std::string_view path=nodes[index].path;
-  if(path=="Misc/Inventory/Equipment / item selection"||path=="Misc/Inventory/Skins for selected item")return Page::Count;
+  if(path.starts_with("Misc/Inventory"))return Page::Count;
 
   if(path.starts_with("Combat/Legit"))return Page::Legit;
 
@@ -143,7 +143,7 @@ void row(MenuRuntime& state,int index,bool& changed) {
     break;
   }
   }
-  if(unavailable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("Unavailable: this control has no implemented runtime mapping.");
+  if(unavailable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))widgets::tooltipf("Unavailable: this control has no implemented runtime mapping.");
   if(state.search_target==node.path || (node.color_path && state.search_target==node.color_path)) {
     if(node.kind!=Kind::Panel)rendered={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
     if(state.search_reveal_pending && !ImGui::GetCurrentWindow()->SkipItems) {
@@ -383,25 +383,5 @@ void render(MenuRuntime& state) {
     ImGui::EndTable();
   }
   ImGui::PopStyleVar();ImGui::EndChild();save(state,changed);
-}
-void inventory_options(MenuRuntime& state) {
-  load(state);bool changed=false;
-  const int index=find("Misc/Inventory");
-  ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign,{0,.5f});
-  const bool preview_options=widgets::button("Inventory options",{160*state.scale,theme::input_height*state.scale});
-  ImGui::PopStyleVar();
-  const Bounds anchor{ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
-  if(preview_options || (reveal_route(state,index) && !ImGui::IsPopupOpen("inventory_tree_options")))ImGui::OpenPopup("inventory_tree_options");
-  if(widgets::begin_popup("inventory_tree_options",anchor,theme::popup_width,430,"Inventory",true,true)) {
-    for(int child:children(index)) {
-      if(std::string_view(nodes[child].path)=="Misc/Inventory/Apply to both teams") {
-        const int team=state.inventory.side,slot=state.inventory.selected[team];ItemDraft draft;
-        if(!read_inventory(state,team,slot,draft) || !inventory_can_mirror(slot,draft.definition))continue;
-      }
-      row(state,child,changed);
-    }
-    widgets::end_popup();
-  }
-  save(state,changed);
 }
 }

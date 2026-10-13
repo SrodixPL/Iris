@@ -86,7 +86,7 @@ void bind_inventory(MenuRuntime& state) {
   adapter.resolve_art=[](void* owner,int definition,int paint){auto& state=*static_cast<MenuRuntime*>(owner);return state.images ? state.images->art(definition,paint) : InventoryArt{};};
   adapter.preview=[](void* owner,int definition,int paint){
     auto& state=*static_cast<MenuRuntime*>(owner);
-    if(!state.gameplay_wired || !state.apply_queue || !feature_switches::enabled(state.values,"Misc/Inventory/Live updating preview"))return InventoryArt{};
+    if(!state.gameplay_wired || !state.apply_queue)return InventoryArt{};
     const auto& draft=state.inventory.detail_draft;cosmetics::Selection selection;selection.definition=definition;selection.paint=paint;selection.wear=draft.wear;selection.seed=draft.seed;selection.stattrak=draft.stattrak?draft.counter:-1;selection.name=draft.name;
     if(!cosmetics::valid(selection))return state.images ? state.images->last_preview(definition) : InventoryArt{};
     const auto& camera=state.inventory.preview_pose;

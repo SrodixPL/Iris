@@ -175,21 +175,21 @@ bool evaluate(ImGuiID id,bool& value,bool disabled) {
   const bool before=value;
   if(option.kind==Kind::Boolean) {
     if(disabled || widgets::capturing_hotkey() || ImGui::GetIO().WantTextInput) return false;
-    const Hotkey* idle=nullptr;
+    // Holds temporarily override the manual switch, then restore that baseline.
+    if(!option.was_active || value!=option.last_value)option.baseline=value;
     const Hotkey* held=nullptr;
     for(auto& hotkey : option.entries) {
       if(hotkey.key==ImGuiKey_None) { hotkey.active=false; continue; }
       if(hotkey.mode==Mode::Toggle) {
-        if(ImGui::IsKeyPressed(hotkey.key,false)) value=!value;
+        if(ImGui::IsKeyPressed(hotkey.key,false)) option.baseline=!option.baseline;
         hotkey.active=false;
       } else {
-        if(!idle) idle=&hotkey;
         hotkey.active=ImGui::IsKeyDown(hotkey.key);
         if(hotkey.active) held=&hotkey;
       }
     }
-    if(held) value=held->mode==Mode::HoldOff ? !held->value : held->value;
-    else if(idle) value=idle->mode==Mode::HoldOff ? idle->value : !idle->value;
+    value=held ? (held->mode==Mode::HoldOff ? !held->value : held->value) : option.baseline;
+    option.was_active=held!=nullptr;
     option.last_value=value;
     return value!=before;
   }

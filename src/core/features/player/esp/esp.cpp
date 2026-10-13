@@ -1,5 +1,6 @@
 #include "core/features/player/esp/drawing.hpp"
 #include "core/features/player/esp/elements.hpp"
+#include "core/features/player/esp/pipeline.hpp"
 #include "core/features/combat/settings.hpp"
 #include <Windows.h>
 #include <imgui.h>
@@ -12,7 +13,9 @@ bool draw(Icon (*lookup)(void*,int),void* owner) {
     const auto current=snapshot.load();
     if(!current)return false;
     DWORD pid{};GetWindowThreadProcessId(GetForegroundWindow(),&pid);if(pid!=GetCurrentProcessId())return false;
-    return draw_snapshot(*current,GetTickCount64(),lookup,owner);
+    const auto ready=esp::prepared();const auto size=ImGui::GetIO().DisplaySize;
+    if(!ready||!ready->players||ready->width!=size.x||ready->height!=size.y||ready->players->settings!=current->settings)return false;
+    return draw_snapshot(*ready->players,GetTickCount64(),lookup,owner,ready->bounds);
 }
 bool draw_wall_target(const WallTarget& frame,std::uint64_t now,const std::array<float,4>& color) {
     if(now<frame.sampled || now-frame.sampled>150 || frame.damage<=0 || frame.region<0 || frame.region>=6)return false;
@@ -28,32 +31,33 @@ bool draw_wall_target(const WallTarget& frame,std::uint64_t now,const std::array
     if(center){char label[64]{};std::snprintf(label,sizeof(label),"%s Â· %.0f HP",nospread::hitbox_names[frame.region],frame.damage);text(d,{center->x,center->y+8},line,label,true);}
     return true;
 }
-bool draw_snapshot(const Snapshot& frame,std::uint64_t now,Icon (*lookup)(void*,int),void* owner) {
+bool draw_snapshot(const Snapshot& frame,std::uint64_t now,Icon (*lookup)(void*,int),void* owner,std::span<const std::optional<ScreenBounds>> prepared) {
     const auto* current=&frame;
     if(!any_esp_enabled(current->settings)||now<current->sampled||now-current->sampled>250)return false;
     const auto size=ImGui::GetIO().DisplaySize;const auto& settings=current->settings;
     auto* d=ImGui::GetBackgroundDrawList();const auto initial=d->VtxBuffer.Size;const float font=ImGui::GetFontSize();
     bool drawn{};
-    for(const auto& p:current->players) {
+    for(std::size_t index=0;index<current->players.size();++index) {
+        const auto& p=current->players[index];
         const auto c=for_target(settings,p.enemy);if(!c.enabled)continue;
         const bool overlay=p.distance<=c.max_distance&&(!c.visible_only||p.visible);
         const auto& rgba=p.enemy?(p.visible?c.enemy_color:c.hidden_color):c.ally_color;
         const auto element=[&](const std::array<float,4>& value){return esp::rgba(tint(rgba,value));};
         if(overlay&&c.sounds&&p.sound_age>=0){sound(d,p,c,*current,now,size,tint(rgba,c.sound_color));drawn=true;}
-        ImVec2 min{size.x,size.y},max{};bool projected=true;
-        for(int i=0;i<8;++i){const auto q=project(current->matrix,p.origin+Vector{i&1?p.maximum.x:p.minimum.x,i&2?p.maximum.y:p.minimum.y,i&4?p.maximum.z:p.minimum.z},size.x,size.y);if(!q){projected=false;break;}min.x=std::min(min.x,q->x);min.y=std::min(min.y,q->y);max.x=std::max(max.x,q->x);max.y=std::max(max.y,q->y);}
-        if(!projected||max.x<0||min.x>size.x||max.y<0||min.y>size.y) {
+        const auto bounds=prepared.size()==current->players.size()?prepared[index]:player_bounds(current->matrix,p,size.x,size.y);
+        if(!bounds) {
             if(!overlay||!c.arrows||!p.enemy)continue;
             const auto& m=current->matrix;const auto v=p.origin;
             float x=m[0][0]*v.x+m[0][1]*v.y+m[0][2]*v.z+m[0][3],y=-(m[1][0]*v.x+m[1][1]*v.y+m[1][2]*v.z+m[1][3]);
-            const float n=std::hypot(x,y);if(!std::isfinite(n)||n<.001f)continue;x/=n;y/=n;
+            const float n=std::hypot(x,y);if(!std::isfinite(n))continue;if(n<.001f){x=0;y=1;}else{x/=n;y/=n;}
             const float margin=c.arrow_size*2+font;
             const float reach=std::min((size.x*.5f-margin)/std::max(std::abs(x),.001f),(size.y*.5f-margin)/std::max(std::abs(y),.001f));if(reach<=0)continue;
             const ImVec2 tip{size.x*.5f+x*reach,size.y*.5f+y*reach};
             const ImVec2 a{tip.x-x*c.arrow_size-y*c.arrow_size*.6f,tip.y-y*c.arrow_size+x*c.arrow_size*.6f},b{tip.x-x*c.arrow_size+y*c.arrow_size*.6f,tip.y-y*c.arrow_size-x*c.arrow_size*.6f};
             d->AddTriangleFilled(tip,a,b,esp::rgba(c.arrow_color));d->AddTriangle(tip,a,b,IM_COL32(0,0,0,220));drawn=true;continue;
         }
-        if(max.x-min.x<2||max.y-min.y<2||max.x-min.x>size.x*2||max.y-min.y>size.y*2)continue;
+        const ImVec2 min=point(bounds->minimum),max=point(bounds->maximum);
+        if(max.x-min.x<.5f||max.y-min.y<.5f)continue;
         const float middle=(min.x+max.x)*.5f;
         box(d,p,c,min,max);
         if(!overlay){drawn=true;continue;}

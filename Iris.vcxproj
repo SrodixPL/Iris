@@ -129,6 +129,10 @@
     <ClInclude Include="src\core\features\combat\shot_policy.hpp" />
     <ClInclude Include="src\core\features\combat\spread_solver.hpp" />
     <ClInclude Include="src\core\features\combat\targeting.hpp" />
+    <ClCompile Include="src\core\features\combat\workers.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\combat\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\combat\workers.hpp" />
     <ClCompile Include="src\core\features\inventory\catalog.cpp">
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
     </ClCompile>
@@ -173,6 +177,10 @@
       <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\features\inventory\requests.hpp" />
+    <ClCompile Include="src\core\features\inventory\weapon_mesh.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\inventory\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\weapon_mesh.hpp" />
     <ClCompile Include="src\core\features\misc\misc.cpp">
       <ObjectFileName>$(IntDir)src\core\features\misc\</ObjectFileName>
     </ClCompile>
@@ -218,6 +226,10 @@
     <ClCompile Include="src\core\features\player\esp\hitboxes.cpp">
       <ObjectFileName>$(IntDir)src\core\features\player\esp\</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\pipeline.cpp">
+      <ObjectFileName>$(IntDir)src\core\features\player\esp\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\esp\pipeline.hpp" />
     <ClCompile Include="src\core\features\player\esp\reader.cpp">
       <ObjectFileName>$(IntDir)src\core\features\player\esp\</ObjectFileName>
     </ClCompile>
@@ -416,6 +428,10 @@
       <ObjectFileName>$(IntDir)src\core\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\module.hpp" />
+    <ClCompile Include="src\core\render\chams_layer.cpp">
+      <ObjectFileName>$(IntDir)src\core\render\</ObjectFileName>
+    </ClCompile>
+    <ClInclude Include="src\core\render\chams_layer.hpp" />
     <ClCompile Include="src\core\render\renderer.cpp">
       <ObjectFileName>$(IntDir)src\core\render\</ObjectFileName>
     </ClCompile>
@@ -504,6 +520,7 @@
     </ClCompile>
     <ClInclude Include="src\ext\safetyhook\Zydis.h" />
     <ClInclude Include="src\util\file_hash.hpp" />
+    <ClInclude Include="src\util\latest_worker.hpp" />
     <ClInclude Include="src\util\math.hpp" />
     <ClCompile Include="src\util\memory.cpp">
       <ObjectFileName>$(IntDir)src\util\</ObjectFileName>

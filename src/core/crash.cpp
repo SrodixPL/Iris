@@ -39,7 +39,7 @@ LONG CALLBACK report(EXCEPTION_POINTERS* exception) noexcept {
 }
 void initialize() noexcept {
     try {
-        const auto folder = module::folder() / L"logs";
+        const auto folder = module::data_folder() / L"logs";
         std::filesystem::create_directories(folder);
         const auto path = folder / (L"crash-" + std::to_wstring(GetCurrentProcessId()) + L".dmp");
         if (wcscpy_s(dump_path, path.c_str()) == 0 && module::pin()) AddVectoredExceptionHandler(1, report);

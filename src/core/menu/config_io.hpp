@@ -12,14 +12,20 @@ struct ConfigResult {
 class ConfigIO {
     std::filesystem::path folder_;std::mutex mutex_;std::deque<ConfigResult> completed_;
     FileWorker worker_;
+    bool inventory_only_{};
     void complete(ConfigResult result);
 public:
-    explicit ConfigIO(std::filesystem::path root);
+    explicit ConfigIO(std::filesystem::path root,bool inventory_only=false);
     void request(ConfigAction action,std::string name={},MenuState state={},std::string argument={});
     std::optional<ConfigResult> poll();
 };
 std::string encode_config(const MenuState& state);
 MenuState decode_config(const std::string& text);
+std::string encode_inventory_config(const MenuState& state);
+std::uint64_t inventory_state_hash(const MenuState& state);
+void copy_inventory(MenuState& destination,const MenuState& source);
+void inventory_config_selector(MenuRuntime& state,float width);
+void tick_inventory_configs(MenuRuntime& state);
 bool valid_config_name(const std::string& name);
 bool default_config(const std::string& name);
 void persist_features(MenuRuntime& state);

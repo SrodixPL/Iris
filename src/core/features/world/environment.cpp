@@ -2,6 +2,7 @@
 #include "core/features/runtime.hpp"
 #include "core/features/world/native.hpp"
 #include "core/sdk/world_bindings.hpp"
+#include "core/sdk/entities.hpp"
 #include <fstream>
 #include "core/features/world/environment.hpp"
 
@@ -19,16 +20,33 @@ void update_environment(Runtime& state) {
     if((!settings.enabled&&!state.requested.player_visuals.radar) || state.stopping) {
         for(auto& [handle,saved]:state.environment_entities)
             restore_environment_entity(saved,entity(state,handle)==saved.address);
-        state.environment_entities.clear();state.environment_scan=0;return;
+        state.environment_entities.clear();state.environment_scan=0;state.environment_scan_cursor=0;state.environment_scan_chunks=0;return;
+    }
+    // Pawn designer names are not a reliable roster. Reuse the reviewed
+    // controller identity and serial-bearing pawn handles used by player ESP.
+    if(state.requested.player_visuals.radar){
+        const int pawn_field=environment_offset(state,"CCSPlayerController","m_hPlayerPawn");
+        const auto chunks=get<Address>(state.client+bindings::entity_chunks);
+        const auto chunk=chunks?get<Address>(chunks):0;
+        if(chunk&&pawn_field>=0)for(unsigned i=1;i<=64;++i){
+            const auto identity=memory::read<sdk::EntityIdentity>(chunk+i*sizeof(sdk::EntityIdentity));
+            if(!identity||!identity->entity||(identity->handle&0x7fff)!=i||get<Address>(identity->entity)!=state.client+sdk::binding_values::layout_controller_vtable)continue;
+            const auto handle=get<std::uint32_t>(identity->entity+pawn_field);const auto pawn=entity(state,handle);if(!pawn)continue;
+            auto& saved=state.environment_entities[handle];
+            if(saved.address!=pawn){restore_environment_entity(saved,false);saved=EnvironmentEntity{pawn,"cs_player_pawn",{}};}
+            update_flash(state,saved);
+        }
     }
     if(now<state.environment_tick)return;
     state.environment_tick=now+50;
     if(now>=state.environment_scan){
-        state.environment_scan=now+1000;
         const auto chunks=get<Address>(state.client+bindings::entity_chunks);
-        if(chunks)for(unsigned group=0;group<64;++group){
+        if(chunks!=state.environment_scan_chunks){state.environment_scan_cursor=0;state.environment_scan_chunks=chunks;}
+        unsigned sampled{};
+        if(chunks)for(;state.environment_scan_cursor<64&&sampled<2;++state.environment_scan_cursor){
+            const auto group=state.environment_scan_cursor;
             const auto chunk=memory::read<Address>(chunks+group*8).value_or(0);if(!chunk)continue;
-            std::array<std::byte,512*0x70> identities{};
+            ++sampled;std::array<std::byte,512*0x70> identities{};
             if(!memory::read(chunk,identities))continue;
             for(unsigned index=0;index<512;++index){
                 const auto row=std::span<const std::byte>(identities).subspan(index*0x70,0x70);
@@ -46,6 +64,7 @@ void update_environment(Runtime& state) {
                 if(saved.address!=address){restore_environment_entity(saved,false);saved=EnvironmentEntity{address,kind,{}};}
             }
         }
+        if(state.environment_scan_cursor>=64||!chunks){state.environment_scan_cursor=0;state.environment_scan=now+1000;}
     }
     for(auto it=state.environment_entities.begin();it!=state.environment_entities.end();){
         auto& [handle,saved]=*it;

@@ -1,6 +1,7 @@
 #include "core/sdk/binding_values.hpp"
 #include "core/features/runtime.hpp"
 #include "core/features/inventory/patch.hpp"
+#include "core/features/inventory/weapon_mesh.hpp"
 namespace iris::cosmetics::detail {
 void publish_finishes(Runtime& state) {
     auto snapshot = std::make_shared<std::map<Address, Selection>>();
@@ -116,6 +117,12 @@ void restore(Runtime& state, ChangedWeapon& weapon) {
     const auto scene = get<Address>(weapon.entity + state.fields.scene);
     for (auto it = weapon.fields.rbegin(); it != weapon.fields.rend(); ++it) {
         if (it->scene && scene != it->scene) continue;
+        if (it->scene && it->address == scene + state.fields.model + state.fields.mesh && it->bytes.size() == sizeof(std::uint64_t)) {
+            std::uint64_t original{};
+            std::memcpy(&original, it->bytes.data(), sizeof(original));
+            state.set_mesh_group_mask(reinterpret_cast<void*>(scene), original);
+            continue;
+        }
         if (!memory::write(it->address, std::span<const std::byte>(it->bytes))) throw std::runtime_error("Cannot restore a cosmetic field.");
     }
     if (weapon.model_changed) {
@@ -129,7 +136,7 @@ void restore(Runtime& state, ChangedWeapon& weapon) {
     // hides the world weapon. Normalize to its original visible mesh instead.
     if (scene && scene == weapon.scene && !weapon.original_mesh &&
         !entity(state, get<std::uint32_t>(weapon.entity + state.fields.owner)))
-        if (!memory::write(scene + state.fields.model + state.fields.mesh, std::uint64_t{1})) throw std::runtime_error("Cannot restore world-weapon visibility.");
+        state.set_mesh_group_mask(reinterpret_cast<void*>(scene), std::uint64_t{1});
 }
 void sample_roster(Runtime& state,RosterSample& next) {
     const Address manager = state.client + bindings::inventory_manager;
@@ -233,6 +240,7 @@ void update(Runtime& state) {
             if ((alive || it->second.menu_weapon) && it->second.refresh_ticks) {
                 --it->second.refresh_ticks;
                 if (it->second.refresh_ticks == 4 || it->second.refresh_ticks == 0) {
+                    synchronize_weapon_mesh(state, it->second);
                     state.rebuild_materials(reinterpret_cast<void*>(it->second.entity), false);
                     refresh_hud |= !it->second.menu_weapon;
                     refreshed = true;
@@ -293,14 +301,16 @@ void update(Runtime& state) {
                 patch(saved, address + state.fields.stattrak, selected->stattrak);
                 patch(saved, item + state.fields.name, selected->name);
                 patch(saved, item + state.fields.id_high, std::uint32_t{0xffffffff});
-                saved.finish_override = is_knife(definition) || menu_weapon;
-                if (saved.finish_override) publish_finishes(state);
-                const auto current_node = get<Address>(address + state.fields.scene);
-                const auto* finish = find_finish(selected->definition, selected->paint);
-                if (current_node) {
-                    patch(saved, current_node + state.fields.model + state.fields.mesh, std::uint64_t{finish && finish->legacy ? 2u : 1u});
-                    saved.fields.back().scene = current_node;
-                }
+                // Native legacy-model selection resolves the paint kit through
+                // the item getter, independently of the entity fallback fields.
+                // Firearms need the same snapshot as knives so their geometry
+                // and generated materials both see the requested finish.
+                saved.finish_override = true;
+                publish_finishes(state);
+                synchronize_weapon_mesh(state, saved);
+                // Regular firearms use the native regenerate path below. A
+                // purchase can expose the entity before its material owner is
+                // ready for the direct knife/menu rebuild path.
                 if (saved.model_changed || menu_weapon) {
                     state.rebuild_materials(reinterpret_cast<void*>(address), false);
                     saved.refresh_ticks=8;
@@ -309,7 +319,7 @@ void update(Runtime& state) {
             }
         }
     }
-    if (refreshed && pawn) state.regenerate();
+    refresh_weapon_materials(state, refreshed, pawn);
     std::shared_ptr<const HudKnife> hud_knife;
     if (alive && state.requested.enabled && !state.stopping) {
         for (const auto& [handle, weapon] : state.changed) {
@@ -342,8 +352,22 @@ void update(Runtime& state) {
         state.first_update = false;
     }
 }
+int update_exception_filter(Runtime* state, EXCEPTION_POINTERS* exception) noexcept {
+    const auto* record = exception->ExceptionRecord;
+    if (record->ExceptionCode == 0xe06d7363) return EXCEPTION_CONTINUE_SEARCH;
+    const auto instruction = reinterpret_cast<Address>(record->ExceptionAddress);
+    char message[256]{};
+    if (instruction >= state->client && instruction - state->client < bindings::image_size)
+        std::snprintf(message, sizeof(message), "Cosmetic native fault: code=0x%08lx client RVA=0x%llx.",
+            record->ExceptionCode, static_cast<unsigned long long>(instruction - state->client));
+    else
+        std::snprintf(message, sizeof(message), "Cosmetic native fault: code=0x%08lx instruction=%p.",
+            record->ExceptionCode, record->ExceptionAddress);
+    overlay_log(message);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
 bool guarded_update(Runtime* state) {
     __try { update(*state); return true; }
-    __except (GetExceptionCode() == 0xe06d7363 ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_EXECUTE_HANDLER) { return false; }
+    __except (update_exception_filter(state, GetExceptionInformation())) { return false; }
 }
 }

@@ -1,4 +1,5 @@
 #include "core/menu/settings_io.hpp"
+#include "core/module.hpp"
 #include "core/menu/theme.hpp"
 #include "ext/json/json.hpp"
 #include <algorithm>
@@ -96,10 +97,10 @@ ImGuiKey imgui_key(int vk) {
   return ImGuiKey_None;
 }
 
-std::string encode_settings(const MenuSettings& s){Json colors=Json::array();for(const auto& color:s.saved_colors)colors.push_back(color ? Json::array({color->x,color->y,color->z,color->w}) : Json(nullptr));return Json{{"version",1},{"scale",s.scale},{"appearance",s.color_mode},{"safe_mode",s.safe_mode},{"hotkey",s.hotkey},{"close_key",s.close_key},{"animations",s.animations},{"autosave",s.autosave},{"accent",{s.accent.x,s.accent.y,s.accent.z,s.accent.w}},{"autoload",s.autoload},{"saved_colors",colors}}.dump(2);}
+std::string encode_settings(const MenuSettings& s){Json colors=Json::array();for(const auto& color:s.saved_colors)colors.push_back(color ? Json::array({color->x,color->y,color->z,color->w}) : Json(nullptr));return Json{{"version",1},{"scale",s.scale},{"appearance",s.color_mode},{"safe_mode",s.safe_mode},{"hotkey",s.hotkey},{"close_key",s.close_key},{"animations",s.animations},{"autosave",s.autosave},{"accent",{s.accent.x,s.accent.y,s.accent.z,s.accent.w}},{"autoload",s.autoload},{"inventory_autoload",s.inventory_autoload},{"saved_colors",colors}}.dump(2);}
 MenuSettings decode_settings(const std::string& text,MenuSettings s){
     auto j=Json::parse(text);if(!j.is_object())throw std::runtime_error("Settings must be a JSON object");
-    s.scale=std::clamp(j.value("scale",s.scale),0,6);s.color_mode=std::clamp(j.value("appearance",s.color_mode),0,1);s.safe_mode=std::clamp(j.value("safe_mode",s.safe_mode),0,2);s.hotkey=j.value("hotkey",s.hotkey);s.close_key=j.value("close_key",s.close_key);s.animations=j.value("animations",s.animations);s.autosave=j.value("autosave",s.autosave);s.autoload=j.value("autoload",s.autoload);
+    s.scale=std::clamp(j.value("scale",s.scale),0,6);s.color_mode=std::clamp(j.value("appearance",s.color_mode),0,1);s.safe_mode=std::clamp(j.value("safe_mode",s.safe_mode),0,2);s.hotkey=j.value("hotkey",s.hotkey);s.close_key=j.value("close_key",s.close_key);s.animations=j.value("animations",s.animations);s.autosave=j.value("autosave",s.autosave);s.autoload=j.value("autoload",s.autoload);s.inventory_autoload=j.value("inventory_autoload",s.inventory_autoload);
     if(s.hotkey<=0||s.hotkey>=256||s.hotkey==0x23||s.hotkey==s.close_key)s.hotkey=0x2e;
     if(s.close_key<=0||s.close_key>=256||s.close_key==0x23||s.close_key==s.hotkey)s.close_key=0x1b;
     if(j.contains("accent")&&j["accent"].is_array()&&j["accent"].size()==4)for(int i=0;i<4;++i){float value=j["accent"][i].get<float>();(&s.accent.x)[i]=std::isfinite(value)?std::clamp(value,0.f,1.f):(&s.accent.x)[i];}
@@ -116,7 +117,7 @@ MenuSettings decode_settings(const std::string& text,MenuSettings s){
 }
 SettingsIO::SettingsIO(std::filesystem::path folder):path_(std::move(folder)/"menu-settings.json"){}
 void SettingsIO::complete(SettingsResult result){std::lock_guard lock(mutex_);completed_.push_back(std::move(result));}
-void SettingsIO::load(MenuSettings defaults){worker_.push([this,defaults]{SettingsResult result;result.loaded=true;result.settings=defaults;try{if(std::filesystem::exists(path_))result.settings=decode_settings(read_file(path_),defaults);}catch(const std::exception& e){result.error=e.what();}complete(std::move(result));});}
+void SettingsIO::load(MenuSettings defaults){worker_.push([this,defaults]{SettingsResult result;result.loaded=true;result.settings=defaults;try{if(path_.parent_path()==module::data_folder())module::migrate_data();if(std::filesystem::exists(path_))result.settings=decode_settings(read_file(path_),defaults);}catch(const std::exception& e){result.error=e.what();}complete(std::move(result));});}
 void SettingsIO::save(MenuSettings settings){if(!worker_.push([this,settings]{SettingsResult result;try{atomic_write(path_,encode_settings(settings));}catch(const std::exception& e){result.error=e.what();}complete(std::move(result));},1))complete({false,{},"Settings queue is full; try again"});}
 std::optional<SettingsResult> SettingsIO::poll(){std::unique_lock lock(mutex_,std::try_to_lock);if(!lock||completed_.empty())return {};auto result=std::move(completed_.front());completed_.pop_front();return result;}
 void save_settings(MenuRuntime& state){if(state.settings_io)state.settings_io->save(state.settings);}

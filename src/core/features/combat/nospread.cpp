@@ -3,6 +3,8 @@
 #include "core/features/combat/spread_solver.hpp"
 #include "core/features/combat/targeting.hpp"
 #include "core/features/combat/aim_math.hpp"
+#include "core/features/combat/workers.hpp"
+#include <unordered_map>
 #include "core/features/combat/shot_policy.hpp"
 #include "core/features/combat/scan_policy.hpp"
 #include "core/features/movement/requests.hpp"
@@ -126,7 +128,9 @@ struct State {
     Vector smooth_rates{};
     std::chrono::steady_clock::time_point last_view{},acquired{};
     combat::ShotConfirmation shot_confirmation;
-    combat::ShotConfirmation trigger_confirmation;
+    combat::workers::Aim aim_worker{combat::workers::RankAim{}};
+    combat::workers::Trigger trigger_worker{combat::workers::ConfirmTrigger{}};
+    std::uint32_t trigger_seen{};std::uint64_t trigger_epoch{};
     std::deque<TriggerPlan> trigger_plans;
     float acquisition_delay{},trigger_delay{};
     Vector previous_camera{};

@@ -114,6 +114,12 @@
     <ClInclude Include="src\core\features\combat\targeting.hpp">
       <Filter>src\core\features\combat</Filter>
     </ClInclude>
+    <ClCompile Include="src\core\features\combat\workers.cpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\combat\workers.hpp">
+      <Filter>src\core\features\combat</Filter>
+    </ClInclude>
     <ClCompile Include="src\core\features\inventory\catalog.cpp">
       <Filter>src\core\features\inventory</Filter>
     </ClCompile>
@@ -172,6 +178,12 @@
       <Filter>src\core\features\inventory</Filter>
     </ClCompile>
     <ClInclude Include="src\core\features\inventory\requests.hpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClInclude>
+    <ClCompile Include="src\core\features\inventory\weapon_mesh.cpp">
+      <Filter>src\core\features\inventory</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\inventory\weapon_mesh.hpp">
       <Filter>src\core\features\inventory</Filter>
     </ClInclude>
     <ClCompile Include="src\core\features\misc\misc.cpp">
@@ -237,6 +249,12 @@
     <ClCompile Include="src\core\features\player\esp\hitboxes.cpp">
       <Filter>src\core\features\player\esp</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\features\player\esp\pipeline.cpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\features\player\esp\pipeline.hpp">
+      <Filter>src\core\features\player\esp</Filter>
+    </ClInclude>
     <ClCompile Include="src\core\features\player\esp\reader.cpp">
       <Filter>src\core\features\player\esp</Filter>
     </ClCompile>
@@ -531,6 +549,12 @@
     <ClInclude Include="src\core\module.hpp">
       <Filter>src\core</Filter>
     </ClInclude>
+    <ClCompile Include="src\core\render\chams_layer.cpp">
+      <Filter>src\core\render</Filter>
+    </ClCompile>
+    <ClInclude Include="src\core\render\chams_layer.hpp">
+      <Filter>src\core\render</Filter>
+    </ClInclude>
     <ClCompile Include="src\core\render\renderer.cpp">
       <Filter>src\core\render</Filter>
     </ClCompile>
@@ -688,6 +712,9 @@
       <Filter>src\ext\safetyhook</Filter>
     </ClInclude>
     <ClInclude Include="src\util\file_hash.hpp">
+      <Filter>src\util</Filter>
+    </ClInclude>
+    <ClInclude Include="src\util\latest_worker.hpp">
       <Filter>src\util</Filter>
     </ClInclude>
     <ClInclude Include="src\util\math.hpp">

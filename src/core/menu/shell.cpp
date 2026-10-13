@@ -27,6 +27,9 @@ using namespace ui;
 void initialize(State &state) {
   state = State{};
   state.gameplay_wired=iris::startup::is_game();
+  wchar_t account[257]{};
+  const auto count=GetEnvironmentVariableW(L"USERNAME",account,257);
+  if(count && count<257){const int bytes=WideCharToMultiByte(CP_UTF8,0,account,count,nullptr,0,nullptr,nullptr);if(bytes>0){state.username.resize(bytes);WideCharToMultiByte(CP_UTF8,0,account,count,state.username.data(),bytes,nullptr,nullptr);}}
   widgets::reset();
   BOOL enabled = TRUE;
   if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0))
@@ -79,6 +82,7 @@ void initialize(State &state) {
   state.saved_hash = state_hash(state.values);
   state.config_io = std::make_shared<ConfigIO>(executable_folder());
   state.config_io->request(ConfigAction::List);
+  state.inventory_config_io=std::make_shared<ConfigIO>(executable_folder(),true);
 }
 void render(State& state) {
   if(state.images)state.images->pump();

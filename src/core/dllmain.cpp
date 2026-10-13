@@ -30,7 +30,8 @@ DWORD WINAPI initialize(void*) noexcept {
                 if(iris::sdk::sha256_file(module)!=iris::sdk::binding_config::hashes[i])
                     throw std::runtime_error(iris::sdk::binding_config::updated_message);
             }
-            const auto source=iris::sdk::binding_config::load(iris::module::folder()/L"bindings.json");
+            const auto binding_path=iris::module::data_folder()/L"bindings.json";
+            const auto source=iris::sdk::binding_config::load(std::filesystem::exists(binding_path)?binding_path:iris::module::folder()/L"bindings.json");
             iris::overlay_log(source==iris::sdk::binding_config::Source::built_in ?
                 "Bindings: using the fingerprint-gated built-in registry." :
                 "Bindings: using validated external bindings.json.");

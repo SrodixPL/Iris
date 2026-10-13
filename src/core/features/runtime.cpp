@@ -1,10 +1,12 @@
 #include "core/sdk/binding_values.hpp"
+#include "core/features/inventory/weapon_mesh.hpp"
 #include "core/features/runtime.hpp"
 #include "core/features/world/environment.hpp"
 #include "core/features/world/native.hpp"
 #include "core/features/world/esp.hpp"
 #include "core/features/combat/nospread.hpp"
 #include "core/features/player/visuals.hpp"
+#include "core/features/player/esp/pipeline.hpp"
 #include "core/features/player/visual_native.hpp"
 namespace iris::cosmetics::detail {
 // The overlay already pins the DLL. This hook/trampoline also remains valid until
@@ -46,6 +48,7 @@ void recover(Runtime& state) {
     restore_agent(state);
     update_menu_models(state);
     restore_glove(state);
+    try {restore_hud_weapon_meshes(state);}catch(const std::exception& error){overlay_log(error.what());}
     for (auto it = state.changed.begin(); it != state.changed.end();) {
         try { restore(state, it->second); it = state.changed.erase(it); }
         catch (...) { ++it; }
@@ -100,6 +103,7 @@ void __fastcall frame_hook(void* self, int stage) {
     if(GetTickCount64()>=state.visual_fault_at)try {
         if(!guarded_player_visuals(&state))throw std::runtime_error("Player visual reader raised an exception.");
     }catch(const std::exception& error){visuals::snapshot.store(nullptr);visuals::native::stop();state.visual_fault_at=GetTickCount64()+10000;overlay_log(error.what());}
+    visuals::esp::publish();
     if (!state.stopping && GetTickCount64() >= state.next_roster_poll) {
         state.next_roster_poll = GetTickCount64() + 1000;
         try {
@@ -132,7 +136,7 @@ void __fastcall frame_hook(void* self, int stage) {
         state.report.detail = error.what();
         overlay_log(error.what());
         try {
-            if (!guarded_recover(&state) || !state.changed.empty() || state.glove || state.agent || state.music ||
+            if (!guarded_recover(&state) || !state.changed.empty() || !state.hud_weapon_meshes.empty() || state.glove || state.agent || state.music ||
                 (state.inventory_items && state.inventory_items->recovery_pending())) {
                 state.report.detail += " Restoration was incomplete; restart the map.";
                 overlay_log("Cosmetic restoration was incomplete after a failed update.");
@@ -186,6 +190,7 @@ void bind(Runtime& state) {
     state.set_model = reinterpret_cast<SetModel>(state.client + bindings::set_model);
     state.subclass_changed = reinterpret_cast<SubclassChanged>(state.client + bindings::subclass_changed);
     state.rebuild_materials = reinterpret_cast<RebuildMaterials>(state.client + bindings::rebuild_weapon_materials);
+    state.set_mesh_group_mask = reinterpret_cast<SetMeshGroupMask>(state.client + iris::sdk::binding_values::client_set_mesh_group_mask);
     state.make_token = reinterpret_cast<MakeToken>(GetProcAddress(GetModuleHandleW(L"tier0.dll"), "?Make@CUtlStringToken@@SA?AV1@PEBD@Z"));
     if (!state.make_token) throw std::runtime_error("Native subclass token function is unavailable.");
     state.regenerate = reinterpret_cast<Command>(state.client + bindings::regenerate);

@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <span>
+#include <cstddef>
 #include <stdexcept>
 namespace iris::ui {
 using Json=nlohmann::json;
@@ -159,6 +161,35 @@ std::string encode_config(const MenuState& state){
     j["preview_tree"]=state.preview_tree;
     return j.dump(2);
 }
+void copy_inventory(MenuState& destination,const MenuState& source){
+    destination.inventory=source.inventory;destination.inventory.editors={};
+    destination.cosmetics.loadouts=source.cosmetics.loadouts;
+    destination.cosmetics.agents=source.cosmetics.agents;
+    destination.cosmetics.gloves=source.inventory.gloves;
+}
+std::string encode_inventory_config(const MenuState& state){
+    Json json{{"version",1},{"kind","inventory"}};
+    json["inventory"]["both_teams"]=state.inventory.both_teams;
+    for(int team=0;team<2;++team){
+        const char* key=team?"CT":"T";
+        auto& loadout=json["cosmetics"]["loadouts"][key];loadout=Json::array();
+        for(const auto& item:state.cosmetics.loadouts[team])loadout.push_back(selection(item));
+        json["cosmetics"]["agents"][key]=state.cosmetics.agents[team];
+        json["inventory"]["gloves"][key]=selection(state.inventory.gloves[team]);
+    }
+    return json.dump(2);
+}
+std::uint64_t inventory_state_hash(const MenuState& state){
+    std::uint64_t hash=1469598103934665603ull;
+    const auto bytes=[&](const auto& value){for(std::byte byte:std::as_bytes(std::span{&value,1})){hash^=std::to_integer<unsigned char>(byte);hash*=1099511628211ull;}};
+    const auto item=[&](const cosmetics::Selection& value){
+        bytes(value.definition);bytes(value.paint);bytes(value.wear);bytes(value.seed);bytes(value.stattrak);bytes(value.enabled);
+        for(char c:value.name){bytes(c);if(!c)break;}
+    };
+    bytes(state.inventory.both_teams);
+    for(int team=0;team<2;++team){bytes(state.cosmetics.agents[team]);item(state.inventory.gloves[team]);bytes(state.cosmetics.loadouts[team].size());for(const auto& value:state.cosmetics.loadouts[team])item(value);}
+    return hash;
+}
 MenuState decode_config(const std::string& text){
     auto j=Json::parse(text);if(!j.is_object())throw std::runtime_error("Config must be a JSON object");MenuState state;state.cosmetics.enabled=true;
     if(j.contains("preview_tree") && j["preview_tree"].is_string())state.preview_tree=j["preview_tree"].get<std::string>();
@@ -259,7 +290,7 @@ MenuState decode_config(const std::string& text){
     f.auto_accept=c.value("auto_accept",false);f.preserve_killfeed=c.value("preserve_killfeed",false);f.custom_fov=c.value("custom_fov",false);f.fov=bounded(c,"fov",90,60,140);
     f.viewmodel_override=c.value("viewmodel_override",false);f.viewmodel_fov_override=c.value("viewmodel_fov_override",f.viewmodel_override);f.viewmodel_x=bounded(c,"viewmodel_x",1,-10,10);f.viewmodel_y=bounded(c,"viewmodel_y",1,-10,10);f.viewmodel_z=bounded(c,"viewmodel_z",-1,-10,10);f.viewmodel_fov=bounded(c,"viewmodel_fov",60,30,120);
     f.scope_fov_override=c.value("scope_fov_override",false);f.scope_fov=bounded(c,"scope_fov",90,60,140);f.thirdperson_distance=bounded(c,"thirdperson_distance",120,0,500);f.music_kit=c.value("music_kit",0);
-    if(c.contains("world_esp")&&c["world_esp"].is_object()){const auto& esp_json=c["world_esp"];for(const auto& toggle:world::esp::toggles)f.world_esp.*toggle.member=esp_json.value(toggle.key,false);for(const auto& color:world::esp::colors)read_color(esp_json,color.key,f.world_esp.*color.member);}
+    if(c.contains("world_esp")&&c["world_esp"].is_object()){const auto& esp_json=c["world_esp"];for(const auto& toggle:world::esp::toggles)f.world_esp.*toggle.member=esp_json.value(toggle.key,f.world_esp.*toggle.member);for(const auto& color:world::esp::colors)read_color(esp_json,color.key,f.world_esp.*color.member);}
     if(c.contains("custom_models"))f.custom_models=c["custom_models"].get<std::array<std::string,2>>();
     if(c.contains("agents")) for(int team=0;team<2;++team) {
       const auto key=team?"CT":"T"; state.cosmetics.agents[team]=c["agents"].value(key,0);
@@ -317,7 +348,7 @@ MenuState decode_config(const std::string& text){
     seed("Combat/Legit/General/Master switch","enabled",aim.master_enabled);
     const auto& pv=state.cosmetics.player_visuals;
     for(const auto& entry:visuals::colors)if(std::string_view(entry.key)!="arrow_color")seed(std::string("Visuals/Player/Element colors/")+entry.key,"color",color(pv.*entry.member));
-    seed("Visuals/Player/Off-screen arrows/Color","color",color(pv.arrow_color));
+    seed("Visuals/Player/Off-screen arrows/Color","color",color(pv.arrow_color));seed("Visuals/Player/Off-screen arrows/Size","number",pv.arrow_size);seed("Visuals/Player/Off-screen arrows","enabled",pv.arrows);
     const auto target_options=visuals::teammate_options(pv);
     for(const auto& option:visuals::esp_toggles)seed(std::string("Visuals/Player/Teammates/")+option.label,"enabled",target_options.*option.target);
     seed("Visuals/Player/Teammates/Flags","selected",target_options.flags);
@@ -348,6 +379,7 @@ MenuState decode_config(const std::string& text){
     seed("Visuals/World/View/Viewmodel options/Offset X","number",f.viewmodel_x);seed("Visuals/World/View/Viewmodel options/Offset Y","number",f.viewmodel_y);seed("Visuals/World/View/Viewmodel options/Offset Z","number",f.viewmodel_z);
     seed("Visuals/World/View/Perspective options/Distance","number",f.thirdperson_distance);
     seed("Visuals/World/World ESP/Weapons","enabled",f.world_esp.weapons);seed("Visuals/World/World ESP/Hostages","enabled",f.world_esp.hostages);seed("Visuals/World/World ESP/Grenades","enabled",f.world_esp.grenades);seed("Visuals/World/World ESP/Bomb/Bomb indicator","enabled",f.world_esp.bomb);
+    for(const auto& toggle:world::esp::toggles){const std::string_view key=toggle.key;if(key.starts_with("weapons_")||key.starts_with("bomb_")){const std::string prefix=key.starts_with("weapons_")?"Visuals/World/World ESP/Weapons/":"Visuals/World/World ESP/Bomb/";const auto suffix=key.substr(key.find('_')+1);seed(prefix+(suffix=="text"?"Text":suffix=="icon"?"Icon":"Chams"),"enabled",f.world_esp.*toggle.member);}}
     for(const auto& color_entry:world::esp::colors)seed(std::string("Visuals/World/World ESP/Element colors/")+color_entry.key,"color",color(f.world_esp.*color_entry.member));
     seed(base+"World tint","enabled",w.world_override);seed(base+"Bloom override","enabled",w.bloom_override);seed(base+"Wetness override","enabled",w.wetness_override);seed(base+"Smoke tint","enabled",w.smoke_override);
     seed(base+"World color","color",color(w.world_color));seed(base+"Smoke color","color",color(w.smoke_color));seed(base+"Bloom","number",w.bloom);seed(base+"Wetness","number",w.wetness);

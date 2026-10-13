@@ -1,6 +1,8 @@
 #include "core/features/world/esp.hpp"
 #include "core/features/runtime.hpp"
 #include "core/sdk/entities.hpp"
+#include "core/features/player/visual_native.hpp"
+#include "core/features/player/esp/pipeline.hpp"
 #include "ext/imgui/imgui.h"
 #include <optional>
 #include <string_view>
@@ -34,7 +36,7 @@ bool enabled(const world::esp::Settings& settings,Kind kind){
       case Kind::Grenade:return settings.grenades;case Kind::Bomb:return settings.bomb;}
     return false;
 }
-void clear(){candidates.clear();session_chunks=session_pawn=0;session_handle=0xffffffff;scan_at=0;world::esp::stop();}
+void clear(){visuals::native::world_frame.store(nullptr);candidates.clear();session_chunks=session_pawn=0;session_handle=0xffffffff;scan_at=0;world::esp::stop();}
 void scan(Runtime& state,Address chunks,ULONGLONG now){
     candidates.clear();scan_at=now+1000;
     const int designer=environment_offset(state,"CEntityIdentity","m_designerName");
@@ -73,6 +75,7 @@ void update_world_visuals(Runtime& state){
     const int origin_field=environment_offset(state,"CGameSceneNode","m_vecAbsOrigin");
     const int dormant_field=environment_offset(state,"CGameSceneNode","m_bDormant");
     if(origin_field<0||dormant_field<0){world::esp::stop();return;}
+    auto effects=std::make_shared<visuals::native::Frame>();effects->sampled=now;
     auto frame=std::make_shared<world::esp::Snapshot>();frame->matrix=*matrix;frame->settings=settings;frame->sampled=now;
     for(auto it=candidates.begin();it!=candidates.end();){
         const auto& candidate=*it;
@@ -82,21 +85,32 @@ void update_world_visuals(Runtime& state){
         if(!scene||memory::read<bool>(scene+dormant_field).value_or(true))continue;
         const auto origin=memory::read<visuals::Vector>(scene+origin_field);
         if(!origin||!nospread::finite(*origin))continue;
-        std::string label=candidate.label;
+        std::string label=candidate.label;int definition=candidate.kind==Kind::Bomb?49:0;
         if(candidate.kind==Kind::Weapon||candidate.label=="C4"){
             const auto owner=memory::read<std::uint32_t>(candidate.address+state.fields.owner);
             // An unresolved valid owner may be dormant or between network
             // updates; it is not evidence that this weapon was dropped.
             if(!owner || *owner!=0xffffffff)continue;
             if(candidate.kind==Kind::Weapon){
-                const auto definition=memory::read<std::uint16_t>(candidate.address+state.fields.attributes+state.fields.item+state.fields.definition);
-                const auto weapon=definition?find_weapon(*definition):nullptr;if(!weapon)continue;
-                label=weapon->name;
+                const auto item_definition=memory::read<std::uint16_t>(candidate.address+state.fields.attributes+state.fields.item+state.fields.definition);
+                const auto weapon=item_definition?find_weapon(*item_definition):nullptr;if(!weapon)continue;
+                label=weapon->name;definition=*item_definition;
             }
         }
         // Verify identity again after copying fields; do not publish a recycled entity.
-        if(entity(state,candidate.handle)==candidate.address)frame->labels.push_back({*origin,candidate.kind,std::move(label)});
+        if(entity(state,candidate.handle)==candidate.address){
+            frame->labels.push_back({*origin,candidate.kind,std::move(label),definition});
+            if((candidate.kind==Kind::Weapon&&settings.weapons_chams)||(candidate.kind==Kind::Bomb&&settings.bomb_chams)){
+                const auto chunk=memory::read<Address>(chunks+((candidate.handle&0x7fff)>>9)*sizeof(Address)).value_or(0);if(!chunk)continue;
+                visuals::native::Target target;target.pawn=candidate.address;target.handle=candidate.handle;target.identity=chunk+(candidate.handle&0x1ff)*sizeof(EntityIdentity);
+                const auto flags=memory::read<std::uint32_t>(target.identity+sdk::binding_values::layout_identity_flags).value_or(0);
+                target.scene_handle=(((candidate.handle>>15)-(flags&1))<<15)|(candidate.handle&0x7fff);
+                target.chams=target.visible_chams=true;target.visible_color=candidate.kind==Kind::Weapon?settings.weapons_color:settings.bomb_color;
+                effects->materials=visuals::native::prepare_materials(0);effects->targets.push_back(target);
+            }
+        }
     }
+    visuals::native::world_frame.store(std::move(effects));
     world::esp::snapshot.store(std::move(frame));
 }
 bool guarded_world_visuals(Runtime* state){
@@ -106,16 +120,37 @@ bool guarded_world_visuals(Runtime* state){
 }
 namespace iris::world::esp {
 void stop() noexcept {snapshot.store(nullptr);}
-bool draw(){
-    const auto frame=snapshot.load();const auto now=GetTickCount64();
+bool draw(visuals::Icon (*lookup)(void*,int),void* owner){
+    const auto current=snapshot.load();const auto ready=visuals::esp::prepared();const auto size=ImGui::GetIO().DisplaySize;
+    if(!current||!ready||!ready->world||ready->width!=size.x||ready->height!=size.y||ready->world->settings!=current->settings)return false;
+    const auto frame=ready->world;const auto now=GetTickCount64();
     if(!frame||now<frame->sampled||now-frame->sampled>150)return false;
-    const auto size=ImGui::GetIO().DisplaySize;auto* draw=ImGui::GetBackgroundDrawList();bool drawn=false;
-    for(const auto& label:frame->labels){
-        const auto projected=visuals::project(frame->matrix,label.origin,size.x,size.y);
+    auto* draw=ImGui::GetBackgroundDrawList();bool drawn=false;
+    for(std::size_t index=0;index<frame->labels.size();++index){
+        const auto& label=frame->labels[index];const auto projected=ready->labels[index];
         if(!projected||projected->x<0||projected->x>size.x||projected->y<0||projected->y>size.y)continue;
         const auto& settings=frame->settings;
         const auto& color=label.kind==Kind::Weapon?settings.weapons_color:label.kind==Kind::Hostage?settings.hostages_color:label.kind==Kind::Grenade?settings.grenades_color:settings.bomb_color;
         if(color[3]<=0)continue;
+        const bool text=label.kind==Kind::Weapon?settings.weapons_text:label.kind==Kind::Bomb?settings.bomb_text:true;
+        const bool icon=label.kind==Kind::Weapon?settings.weapons_icon:label.kind==Kind::Bomb?settings.bomb_icon:false;
+        const auto tint=ImGui::ColorConvertFloat4ToU32({color[0],color[1],color[2],color[3]});
+        if(icon){
+            const auto art=lookup&&label.kind!=Kind::Bomb?lookup(owner,label.definition):visuals::Icon{};
+            const float h=ImGui::GetFontSize()*1.5f,w=h*(art.texture?art.aspect:label.kind==Kind::Bomb?.8f:2.f);
+            const float x=projected->x-w*.5f,y=projected->y+(text?ImGui::GetFontSize()*.7f:-h*.5f);
+            if(art.texture)draw->AddImage(static_cast<ImTextureID>(art.texture),{x,y},{x+w,y+h},{art.u0,art.v0},{art.u1,art.v1},tint);
+            else if(label.kind==Kind::Bomb){
+                draw->AddRect({x,y+h*.12f},{x+w,y+h},tint,2,0,1.5f);draw->AddRect({x+w*.2f,y+h*.25f},{x+w*.8f,y+h*.42f},tint);
+                for(int row=0;row<2;++row)for(int column=0;column<3;++column)draw->AddCircleFilled({x+w*(.25f+.25f*column),y+h*(.6f+.18f*row)},1,tint);
+                draw->AddBezierCubic({x+w*.3f,y+h*.12f},{x+w*.1f,y-h*.1f},{x+w*.9f,y-h*.1f},{x+w*.7f,y+h*.12f},tint,1.5f);
+            }else {
+                draw->AddRectFilled({x+w*.15f,y+h*.3f},{x+w*.7f,y+h*.48f},tint);draw->AddLine({x+w*.7f,y+h*.36f},{x+w,y+h*.36f},tint,2);
+                draw->AddTriangleFilled({x,y+h*.25f},{x+w*.2f,y+h*.3f},{x+w*.2f,y+h*.55f},tint);draw->AddQuadFilled({x+w*.35f,y+h*.45f},{x+w*.48f,y+h*.45f},{x+w*.43f,y+h*.8f},{x+w*.3f,y+h*.8f},tint);
+            }
+            drawn=true;
+        }
+        if(!text)continue;
         const auto text_size=ImGui::CalcTextSize(label.text.c_str());
         const ImVec2 position{projected->x-text_size.x*.5f,projected->y-text_size.y*.5f};
         draw->AddText({position.x+1,position.y+1},ImGui::ColorConvertFloat4ToU32({0,0,0,color[3]}),label.text.c_str());

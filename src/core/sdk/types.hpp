@@ -7,6 +7,7 @@ using GloveUpdate = void(__fastcall*)(void*);
 using FrameStage = void(__fastcall*)(void*, int);
 using Command = void(__fastcall*)();
 using SetModel = void(__fastcall*)(void*, const char*);
+using SetMeshGroupMask = void(__fastcall*)(void*, std::uint64_t);
 using SubclassChanged = void(__fastcall*)(void*);
 using MakeToken = void*(__cdecl*)(std::uint32_t*, const char*);
 using RebuildMaterials = void(__fastcall*)(void*, bool);

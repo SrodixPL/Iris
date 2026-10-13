@@ -17,7 +17,7 @@ bool FileWorker::push(std::function<void()> job,int key){
     if(jobs_.size()>=32)return false;jobs_.push_back({key,std::move(job)});wake_.notify_one();return true;
 }
 std::filesystem::path executable_folder(){
-    return module::folder();
+    return module::data_folder();
 }
 std::string read_file(const std::filesystem::path& path){
     std::ifstream stream(path,std::ios::binary);if(!stream)throw std::runtime_error("Cannot read file: "+path.filename().string());

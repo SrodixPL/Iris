@@ -45,6 +45,12 @@ struct ChangedWeapon {
     bool finish_override{};
     bool menu_weapon{};
 };
+struct ChangedHudWeaponMesh {
+    Address entity{}, scene{}, owner_entity{};
+    std::uint32_t handle{}, owner_handle{};
+    std::uint64_t original_mesh{};
+    std::uint64_t applied_mask{};
+};
 struct NativePreview {
     alignas(16) std::array<std::byte, bindings::item_size> item{};
     std::optional<Selection> requested, rendering;
@@ -96,6 +102,7 @@ struct Runtime {
     std::map<std::uint32_t,EnvironmentEntity> environment_entities;
     std::map<std::uint32_t,EnvironmentEntity> smoke_volumes;
     ULONGLONG environment_scan{}, environment_tick{};
+    unsigned environment_scan_cursor{};Address environment_scan_chunks{};
     EnvironmentEntity viewmodel_fields, camera_fields;
     std::map<std::uint32_t,visuals::SoundCue> player_sounds;
     ULONGLONG visual_fault_at{}, world_visual_fault_at{}, music_fault_at{};
@@ -160,7 +167,11 @@ struct Runtime {
     SubclassChanged subclass_changed{};
     MakeToken make_token{};
     RebuildMaterials rebuild_materials{};
+    SetMeshGroupMask set_mesh_group_mask{};
     std::map<std::uint32_t, ChangedWeapon> changed;
+    std::map<std::uint32_t, ChangedHudWeaponMesh> hud_weapon_meshes;
+    ULONGLONG hud_weapon_mesh_tick{};
+    bool hud_material_refresh_pending{};
     std::atomic<std::shared_ptr<const std::map<Address, Selection>>> finishes;
     std::atomic<std::shared_ptr<const std::map<Address, Selection>>> menu_finishes;
     std::atomic<std::shared_ptr<const HudKnife>> hud_knife;

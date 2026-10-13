@@ -1,3 +1,5 @@
+#include "core/render/chams_layer.hpp"
+#include "core/features/player/esp/pipeline.hpp"
 #include <d3d11.h>
 #include "core/hooks/dx11.hpp"
 #include "core/render/renderer.hpp"
@@ -161,13 +163,16 @@ bool iris::renderer::render() noexcept {
         ::close_key.store(::menu.menu_close_key);
 #endif
         if(!menu_visible && ::menu.images)::menu.images->pump();
-        bool fov_overlay=iris::visuals::draw([](void* owner,int definition){
+        iris::visuals::esp::viewport(ImGui::GetIO().DisplaySize.x,ImGui::GetIO().DisplaySize.y);
+        iris::render::chams_layer::layer.composite();
+        const auto lookup=[](void* owner,int definition){
             auto* cache=static_cast<iris::ui::ImageCache*>(owner);if(!cache)return iris::visuals::Icon{};
             const auto art=cache->art(definition,0);
             return iris::visuals::Icon{art.texture.GetTexID(),art.uv0.x,art.uv0.y,art.uv1.x,art.uv1.y,art.aspect};
-        },::menu.images.get());
+        };
+        bool fov_overlay=iris::visuals::draw(lookup,::menu.images.get());
         DWORD world_foreground{};GetWindowThreadProcessId(GetForegroundWindow(),&world_foreground);
-        if(!menu_visible && world_foreground==GetCurrentProcessId())iris::world::esp::draw();
+        if(!menu_visible && world_foreground==GetCurrentProcessId())iris::world::esp::draw(lookup,::menu.images.get());
         const auto targeting=iris::nospread::settings.load();
         const auto aiming=iris::nospread::aim_settings.load();
         const auto legit=aiming?aiming->resolve(iris::nospread::legit_weapon_definition.load()):iris::combat::LegitSettings{};
@@ -205,7 +210,7 @@ bool iris::renderer::render() noexcept {
             if(target)fov_overlay|=iris::visuals::draw_wall_target(*target,GetTickCount64(),::menu.values.cosmetics.player_visuals.chams_hidden_color);
         }
         ImGui::Render();
-        if(menu_visible || fov_overlay) {
+        if(menu_visible || fov_overlay || ImGui::GetDrawData()->TotalVtxCount>0) {
             Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
             environment_context->OMGetRenderTargets(1,target.GetAddressOf(),nullptr);
             if(menu_visible)iris::ui::backdrop::render(target.Get(),ImGui::GetDrawData());

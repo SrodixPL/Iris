@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdarg>
 #include <type_traits>
 #include <cctype>
 #include <unordered_map>
@@ -285,7 +286,7 @@ bool key_selector(const char* id,ImGuiKey& key,bool disabled,bool listen,float h
       break;
     }
   }
-  if(capturing_key==item){capture_seen=ImGui::GetFrameCount();if(capture_reserved)ImGui::SetTooltip("End is reserved for stopping the overlay. Choose another key.");}
+  if(capturing_key==item){capture_seen=ImGui::GetFrameCount();if(capture_reserved)widgets::tooltipf("End is reserved for stopping the overlay. Choose another key.");}
   ImGui::EndDisabled();
   ImGui::PopID();
   return changed;
@@ -346,7 +347,7 @@ void profile(MenuRuntime& state,float width) {
   draw->AddText({p.x+19*s-letter.x*.5f,text_y(p.y,theme::nav_height*s)},ImGui::GetColorU32(theme::accent_label()),"N");
   ImGui::PushFont(nullptr,theme::caption_size);
   const float line=theme::nav_height*s*.5f;
-  draw->AddText({p.x+40*s,text_y(p.y,line)},ImGui::GetColorU32(theme::text),"Local profile");
+  inventory::ellipsized_caption(state.username.c_str(),{p.x+40*s,text_y(p.y,line)},{p.x+width-25*s,p.y+line},ImGui::GetColorU32(theme::text));
   draw->AddText({p.x+40*s,text_y(p.y+line,line)},ImGui::GetColorU32(theme::secondary),"Settings");
   ImGui::PopFont();
   ImGui::PushFont(state.icons,theme::profile_icon);
@@ -389,7 +390,7 @@ void profile(MenuRuntime& state,float width) {
     }
     const Bounds bounds{ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
     state.appearance_controls[0]=state.appearance_controls[1]=bounds;
-    if(ImGui::IsItemHovered()) ImGui::SetTooltip(settings.color_mode ? "Switch to dark mode" : "Switch to light mode");
+    if(ImGui::IsItemHovered()) widgets::tooltipf(settings.color_mode ? "Switch to dark mode" : "Switch to light mode");
     state.appearance_position=state.appearance_from+(settings.color_mode-state.appearance_from)*state.appearance_motion.step(settings.animations,theme::page_transition_seconds);
     ImGui::PushFont(state.icons,theme::profile_icon);
     for(int mode=0;mode<2;++mode) {
@@ -446,7 +447,7 @@ void profile(MenuRuntime& state,float width) {
     const bool close=widgets::button("##about_close",{theme::input_height*s,theme::input_height*s});
     state.about_close={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
     icon_text(ImGui::GetWindowDrawList(),{(state.about_close.min.x+state.about_close.max.x)*.5f,(state.about_close.min.y+state.about_close.max.y)*.5f},ImGui::GetColorU32(theme::text),"\xc3\x97");
-    if(ImGui::IsItemHovered())ImGui::SetTooltip("Close");
+    if(ImGui::IsItemHovered())widgets::tooltipf("Close");
     ImGui::SetCursorScreenPos(after_heading);
     const std::string version=std::string("Version: ")+app_version;
     const std::string build=std::string("Build date: ")+__DATE__;
@@ -565,7 +566,7 @@ struct Row {
       label_pos.x+label_width,label,nullptr,&text_size);
     ImGui::PopStyleColor();
     if(text_size.x>label_width && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(label_pos,{label_pos.x+label_width,label_pos.y+text_size.y},false))
-      ImGui::SetTooltip("%s",label);
+      widgets::tooltipf("%s",label);
     ImGui::SetCursorScreenPos({origin.x+std::max(0.f,width-controls),control_y});
     ImGui::BeginDisabled(disabled);
   }
@@ -726,6 +727,9 @@ bool begin_dropdown(const char* id,const char* preview,int count,float width) {
 void end_dropdown() {
   end_popup(); ImGui::PopID();
   ImGui::GetCurrentContext()->LastItemData=dropdown_items.back(); dropdown_items.pop_back();
+}
+void tooltipf(const char* format,...) {
+  char buffer[2048]{};va_list args;va_start(args,format);vsnprintf(buffer,sizeof(buffer),format,args);va_end(args);tooltip(buffer);
 }
 void tooltip(const char* title,const char* detail) {
   const float s=scale(),padding=theme::popup_padding*s;
@@ -891,7 +895,7 @@ bool selection_button(const char* label,bool selected,ImVec2 size,bool disabled)
   ImGui::PushStyleColor(ImGuiCol_Button,selected?theme::active:theme::raised);
   ImGui::PushStyleColor(ImGuiCol_Text,selected?theme::accent:theme::secondary);
   const bool clicked=button(label,size);
-  if(ImGui::IsItemHovered()&&ImGui::CalcTextSize(label).x>size.x-2*ImGui::GetStyle().FramePadding.x)ImGui::SetTooltip("%s",label);
+  if(ImGui::IsItemHovered()&&ImGui::CalcTextSize(label).x>size.x-2*ImGui::GetStyle().FramePadding.x)widgets::tooltipf("%s",label);
   if(selected)ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),ImGui::GetItemRectMax(),ImGui::GetColorU32(theme::accent),theme::control_radius*scale(),0,theme::surface_border_width*scale());
   ImGui::PopStyleColor(2);ImGui::EndDisabled();return clicked;
 }
@@ -1006,7 +1010,7 @@ bool color_control(const char* label,ImVec4& color,ColorSelectorState& editor,Co
   const ImVec4 swatch{color.x,color.y,color.z,alpha?color.w:1.f};
   draw->AddRectFilled({at.x+inset,at.y+inset},{editor.trigger.max.x-inset,editor.trigger.max.y-inset},ImGui::GetColorU32(swatch),3*s);
   draw->AddRect({at.x+inset,at.y+inset},{editor.trigger.max.x-inset,editor.trigger.max.y-inset},ImGui::GetColorU32(theme::border),3*s);
-  if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s  #%s",label,value);
+  if(ImGui::IsItemHovered()) widgets::tooltipf("%s  #%s",label,value);
   if(disabled)editor.request_open=false;
   if(!disabled && (clicked || editor.request_open)) {
     editor.original=color; color_hex(editor.hex,color); editor.error.clear();
@@ -1077,7 +1081,7 @@ bool color_control(const char* label,ImVec4& color,ColorSelectorState& editor,Co
     if(!save_color_palette(palette))palette.slots=previous;
   }
   editor.save={ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
-  if(ImGui::IsItemHovered())ImGui::SetTooltip("Save selected color");
+  if(ImGui::IsItemHovered())widgets::tooltipf("Save selected color");
   ImGui::EndDisabled();
   if(!editor.error.empty()) ImGui::TextWrapped("%s",editor.error.c_str());
   if(!palette.error.empty()) ImGui::TextWrapped("%s",palette.error.c_str());
@@ -1113,7 +1117,7 @@ bool toggle(const char* id,const char* label,bool& value,bool disabled,const Pop
   ImGui::PushStyleColor(ImGuiCol_NavCursor,{0,0,0,0});
   const bool clicked=widgets::button("##switch",{theme::switch_width*s,theme::input_height*s});
   ImGui::PopStyleColor(3);
-  if(clicked) value=!value;
+  if(clicked){value=!value;if(hotkey_enabled){auto& option=hotkeys::option(hotkey_id);option.baseline=value;option.last_value=value;}}
   auto* storage=ImGui::GetStateStorage();
   const auto motion_key=ImGui::GetID("switch_motion");
   const float target=value ? 1.f : 0.f;
@@ -1271,7 +1275,7 @@ bool range_slider(const char* id,const char* label,float& lower,float& upper,flo
   draw->AddLine({position(lower),y},{position(upper),y},ImGui::GetColorU32(theme::accent),theme::slider_track*s);
   draw->AddCircleFilled({position(lower),y},radius,ImGui::GetColorU32(theme::text),24);
   draw->AddCircleFilled({position(upper),y},radius,ImGui::GetColorU32(theme::text),24);
-  if(ImGui::IsItemHovered())ImGui::SetTooltip("%.0f - %.0f ms",lower,upper);
+  if(ImGui::IsItemHovered())widgets::tooltipf("%.0f - %.0f ms",lower,upper);
   // Keyboard/text editing shares the track row, with no second slider.
   ImGui::SameLine(0,theme::setting_gap*s);char display[72]{};std::snprintf(display,sizeof(display),"%.0f-%.0f###range_display",lower,upper);
   if(widgets::button(display,{value_width,theme::input_height*s}))ImGui::OpenPopup("range_values");

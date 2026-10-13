@@ -57,6 +57,7 @@ combat::LegitSettings* selected_settings(combat::Settings& model){
     if(scope.category>=0&&set->categories[scope.category].enabled)return &set->categories[scope.category].settings;
     scope.category=-1;scope.weapon=0;return &set->global;
 }
+struct Removal {MenuRuntime* owner{};std::uint32_t profile{};int category{-1},weapon{};std::string label;Bounds anchor{};} removal;
 struct HotkeyContext {
     MenuRuntime* owner{};std::uint32_t profile{};int frame{-1};bool loading{};
 } hotkey_context;
@@ -91,8 +92,7 @@ bool synchronize_hotkeys(MenuRuntime& state) {
                 auto& option=hotkeys::option(binding(toggle_path(field.key)));
                 const auto held=std::any_of(option.entries.begin(),option.entries.end(),[](const auto& key){return key.mode!=hotkeys::Mode::Toggle&&key.active;});
                 if(!held)continue;
-                const auto idle=std::find_if(option.entries.begin(),option.entries.end(),[](const auto& key){return key.mode!=hotkeys::Mode::Toggle;});
-                if(idle!=option.entries.end()){const bool value=idle->mode==hotkeys::Mode::HoldOff?idle->value:!idle->value;changed|=values.*field.member!=value;values.*field.member=value;}
+                const bool value=option.baseline;changed|=values.*field.member!=value;values.*field.member=value;
             }
             for(const auto& field:combat::legit_numbers){if(!exposed(number_path(field.key)))continue;
                 auto& option=hotkeys::option(binding(number_path(field.key)));if(!option.was_active)continue;
@@ -180,16 +180,25 @@ void selector(MenuRuntime& state,float width){
     for(const auto& item:set->weapons)count+=item.value.enabled;
     if(scope.weapon){if(const auto* weapon=combat::legit_weapon(scope.weapon))label=weapon->name;}
     else if(scope.category>=0)label=combat::legit_category_names[scope.category];
-    bool add=false;
+    bool add=false,remove=false;
+    const auto removable=[&](const char* name,bool selected,int category,int weapon){
+        const bool choose=scope_item(name,selected);
+        if(ImGui::IsItemClicked(ImGuiMouseButton_Right)){
+            removal={&state,model.selected_profile,category,weapon,name,{ImGui::GetItemRectMin(),ImGui::GetItemRectMax()}};
+            remove=true;ImGui::CloseCurrentPopup();
+        }
+        return choose;
+    };
     if(widgets::begin_dropdown("##legit_scope",label,count,width)){
         if(scope_item("Global",scope.category<0&&!scope.weapon)){scope.category=-1;scope.weapon=0;}
-        for(int i=0;i<std::size(combat::legit_category_names);++i)if(set->categories[i].enabled&&scope_item(combat::legit_category_names[i],scope.category==i&&!scope.weapon)){scope.category=i;scope.weapon=0;}
-        for(const auto& item:set->weapons)if(item.value.enabled)if(const auto* weapon=combat::legit_weapon(item.definition))if(scope_item(weapon->name,scope.weapon==item.definition)){scope.category=-1;scope.weapon=item.definition;}
+        for(int i=0;i<std::size(combat::legit_category_names);++i)if(set->categories[i].enabled&&removable(combat::legit_category_names[i],scope.category==i&&!scope.weapon,i,0)){scope.category=i;scope.weapon=0;}
+        for(const auto& item:set->weapons)if(item.value.enabled)if(const auto* weapon=combat::legit_weapon(item.definition))if(removable(weapon->name,scope.weapon==item.definition,-1,item.definition)){scope.category=-1;scope.weapon=item.definition;}
         add=scope_item("Add...");widgets::end_dropdown();
     }
     const Bounds anchor{ImGui::GetItemRectMin(),ImGui::GetItemRectMax()};
     state.title_bounds=anchor;
     if(add)ImGui::OpenPopup("legit_add_scope");
+    if(remove)ImGui::OpenPopup("legit_remove_scope");
     const auto before=state.values;bool changed=false;
     if(widgets::begin_popup("legit_add_scope",anchor,theme::popup_width,430,nullptr,false,true,false,false)){
         const auto caption=[&](const char* text){
@@ -207,9 +216,21 @@ void selector(MenuRuntime& state,float width){
             if(scope_item(weapon.name)){if(found==set->weapons.end())set->weapons.push_back({weapon.definition,{true,set->global}});else found->value={true,set->global};scope.category=-1;scope.weapon=weapon.definition;changed=true;}ImGui::EndDisabled();}
         for(const auto& weapon:cosmetics::weapons())if(!weapon.glove&&!weapon.knife&&!combat::legit_weapon(weapon.definition)){
             ImGui::BeginDisabled();scope_item(weapon.name);ImGui::EndDisabled();
-            if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("No implemented Legit override for this weapon.");
+            if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))widgets::tooltipf("No implemented Legit override for this weapon.");
         }
         widgets::end_popup();
+    }
+    if(widgets::begin_popup("legit_remove_scope",removal.anchor,300,140,"Remove override")){
+        ImGui::TextWrapped("Remove %s? Inherited settings will apply.",removal.label.c_str());
+        if(widgets::button("Remove")){
+            if(removal.owner==&state && removal.profile==model.selected_profile){
+                if(removal.weapon)std::erase_if(set->weapons,[&](const auto& item){return item.definition==removal.weapon;});
+                else if(removal.category>=0 && removal.category<static_cast<int>(set->categories.size()))set->categories[removal.category]={};
+                scope.category=-1;scope.weapon=0;changed=true;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();if(widgets::button("Cancel"))ImGui::CloseCurrentPopup();widgets::end_popup();
     }
     if(changed){state.dirty=true;commit_feature_edit(state,before);}
 }

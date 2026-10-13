@@ -3,6 +3,7 @@
 #include <cstddef>
 namespace iris::ui::widgets {
 void tooltip(const char* title,const char* detail=nullptr);
+void tooltipf(const char* format,...);
 float text_y(float top,float height);
 void icon_text(ImDrawList* draw,ImVec2 center,ImU32 color,const char* glyph);
 void row_text(const char* label,float height=0);

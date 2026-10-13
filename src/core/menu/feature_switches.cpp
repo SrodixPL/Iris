@@ -16,7 +16,7 @@ struct Controls {
  Json data;
  explicit Controls(const MenuState& s):data(parse(s.preview_tree)){}
  const Json& item(std::string_view p)const{static const Json empty=Json::object();auto i=data.find(std::string(p));return i!=data.end()&&i->is_object()?*i:empty;}
- bool on(std::string_view p)const{if(!wired(p))return false;const auto& v=item(p);auto i=v.find("enabled");return i!=v.end()&&i->is_boolean()&&i->get<bool>();}
+ bool on(std::string_view p,bool fallback=false)const{if(!wired(p))return false;const auto& v=item(p);auto i=v.find("enabled");return i!=v.end()&&i->is_boolean()?i->get<bool>():fallback;}
  float number(std::string_view p,float low,float high,float fallback=0)const{const auto* n=node(p);float value=n?n->initial:fallback;const auto& v=item(p);auto i=v.find("number");if(i!=v.end()&&i->is_number()){const double d=i->get<double>();if(std::isfinite(d))value=static_cast<float>(std::clamp(d,double(low),double(high)));}return std::clamp(value,low,high);}
  int choice(std::string_view p,int maximum)const{const auto& v=item(p);auto i=v.find("choice");if(i!=v.end()&&i->is_number_integer()){const auto d=i->get<double>();return static_cast<int>(std::clamp(d,0.,double(maximum)));}return 0;}
  std::array<float,4> color(std::string_view p,std::array<float,4> fallback)const{const auto& v=item(p);auto i=v.find("color");if(i!=v.end()&&i->is_array()&&i->size()==4)for(int n=0;n<4;++n)if((*i)[n].is_number()){const double d=(*i)[n].get<double>();if(std::isfinite(d))fallback[n]=static_cast<float>(std::clamp(d,0.,1.));}return fallback;}
@@ -68,6 +68,7 @@ bool wired(std::string_view path){
  "Visuals/World/World ESP/Weapons","Visuals/World/World ESP/Hostages","Visuals/World/World ESP/Grenades","Visuals/World/World ESP/Bomb/Bomb indicator",
  "Visuals/World/Miscellaneous/Removals/Fog","Visuals/World/Miscellaneous/Removals/Shadows","Visuals/World/Miscellaneous/Removals/Sky","Visuals/World/Miscellaneous/Removals/3D sky"};
  if(std::find(std::begin(additional),std::end(additional),path)!=std::end(additional))return true;
+ for(const auto& toggle:world::esp::toggles){const std::string_view key=toggle.key;if(key.starts_with("weapons_")||key.starts_with("bomb_")){const std::string prefix=key.starts_with("weapons_")?"Visuals/World/World ESP/Weapons/":"Visuals/World/World ESP/Bomb/";const auto suffix=key.substr(key.find('_')+1);if(path==prefix+(suffix=="text"?"Text":suffix=="icon"?"Icon":"Chams"))return true;}}
  if(path.starts_with("Visuals/World/World ESP/Element colors/"))for(const auto& color:world::esp::colors)if(path.substr(std::string_view("Visuals/World/World ESP/Element colors/").size())==color.key)return true;
  constexpr std::string_view world_controls[]{"Sky override","Sky color override","Sky brightness","Night strength","Sunlight color","Sunlight intensity","Fog color","Fog density","Fog start","Fog distance","Fog falloff","Weather intensity","DoF near blurry","DoF near crisp","DoF far crisp","DoF far blurry","World tint","World color","Bloom override","Bloom","Wetness override","Wetness","Smoke tint","Smoke color","Color grading","Brightness","Vibrance","Contrast","Gamma","Warmth","Sharpness","Vignette"};
  constexpr std::string_view ambience="Visuals/World/Miscellaneous/Ambience/";
@@ -117,6 +118,7 @@ void project(MenuState& s){
  c.viewmodel_x=v.number("Visuals/World/View/Viewmodel options/Offset X",-10,10);c.viewmodel_y=v.number("Visuals/World/View/Viewmodel options/Offset Y",-10,10);c.viewmodel_z=v.number("Visuals/World/View/Viewmodel options/Offset Z",-10,10);
  c.thirdperson_distance=v.number("Visuals/World/View/Perspective options/Distance",0,500);
  c.world_esp.weapons=v.on("Visuals/World/World ESP/Weapons");c.world_esp.hostages=v.on("Visuals/World/World ESP/Hostages");c.world_esp.grenades=v.on("Visuals/World/World ESP/Grenades");c.world_esp.bomb=v.on("Visuals/World/World ESP/Bomb/Bomb indicator");
+ for(const auto& toggle:world::esp::toggles){const std::string_view key=toggle.key;if(key.starts_with("weapons_")||key.starts_with("bomb_")){const std::string prefix=key.starts_with("weapons_")?"Visuals/World/World ESP/Weapons/":"Visuals/World/World ESP/Bomb/";const auto suffix=key.substr(key.find('_')+1);c.world_esp.*toggle.member=v.on(prefix+(suffix=="text"?"Text":suffix=="icon"?"Icon":"Chams"),c.world_esp.*toggle.member);}}
  for(const auto& color:world::esp::colors)c.world_esp.*color.member=v.color(std::string("Visuals/World/World ESP/Element colors/")+color.key,c.world_esp.*color.member);
  c.no_spread=false; // Rage is unavailable, including values loaded from old profiles.
  auto& aim=c.combat_settings;const bool master=v.on("Combat/Legit/General/Master switch");

@@ -1,6 +1,7 @@
 #include "core/hooks/dx11.hpp"
 #include "core/module.hpp"
 #include "core/thread_state.hpp"
+#include "core/render/chams_layer.hpp"
 #include <d3d11.h>
 #include "core/hooks/inline_hook.hpp"
 #include "core/log.hpp"
@@ -26,10 +27,20 @@ using Resize = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DX
 using SetTargets = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,ID3D11RenderTargetView* const*,ID3D11DepthStencilView*);
 using SetTargetsUav = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,ID3D11RenderTargetView* const*,ID3D11DepthStencilView*,UINT,UINT,ID3D11UnorderedAccessView* const*,const UINT*);
 using ClearDepth = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,ID3D11DepthStencilView*,UINT,FLOAT,UINT8);
+using DrawIndexed = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,INT);
+using DrawVertices = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT);
+using DrawIndexedInstances = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,UINT,INT,UINT);
+using DrawInstances = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,UINT,UINT);
+using DrawIndirect = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,ID3D11Buffer*,UINT);
+using DrawAuto = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*);
 using SdlWindowQuery = void*(__cdecl*)();
 using SdlWindowBool = bool(__cdecl*)(void*, bool);
 using SdlWindowGet = bool(__cdecl*)(void*);
 using SdlCursor = bool(__cdecl*)();
+using SdlReset = void(__cdecl*)();
+using SdlFlush = void(__cdecl*)(std::uint32_t,std::uint32_t);
+using SdlKeys = const bool*(__cdecl*)(int*);
+using SdlMouse = std::uint32_t(__cdecl*)(float*,float*);
 using SdlWarp = void(__cdecl*)(void*, float, float);
 constexpr UINT cursor_message = WM_APP + 0x4e57;
 struct Message { HWND window; UINT message; WPARAM wparam; LPARAM lparam; bool state_only{}; };
@@ -47,9 +58,15 @@ struct State {
     SdlWindowGet sdl_get_relative{}, sdl_get_grab{};
     SdlCursor sdl_show{}, sdl_hide{}, sdl_cursor_visible{};
     SdlWarp sdl_warp{};
+    SdlReset sdl_reset{},sdl_pump{};
+    SdlFlush sdl_flush{};
+    std::atomic<float> blocked_mouse_x{},blocked_mouse_y{};
+    SdlKeys sdl_keys{};
+    SdlMouse sdl_motion{},sdl_buttons{};
+    std::array<LPARAM,256> held_keys{};
     bool cursor_was_visible{}, inventory_escape_consumed{};
     std::atomic<WPARAM> escape_consumed{}, close_key_down{};
-    std::unique_ptr<hooks::Hook> relative_hook, grab_hook, hide_cursor_hook, warp_hook;
+    std::unique_ptr<hooks::Hook> relative_hook, grab_hook, hide_cursor_hook, warp_hook,keys_hook,motion_hook,buttons_hook,pump_hook;
     std::atomic<std::uint64_t> frame_count{};
     bool initialized{}, error_reported{}, thread_warning{};
     bool hooks_live{};
@@ -66,6 +83,13 @@ struct State {
     std::unique_ptr<hooks::Hook> targets_hook,targets_uav_hook;
     std::unique_ptr<hooks::Hook> clear_depth_hook;
     ClearDepth original_clear_depth{};
+    std::array<std::unique_ptr<hooks::Hook>,7> draw_hooks,deferred_draw_hooks;
+    DrawIndexed original_indexed{};DrawVertices original_vertices{};
+    DrawIndexedInstances original_indexed_instances{};DrawInstances original_instances{};
+    DrawIndirect original_indexed_indirect{},original_indirect{};DrawAuto original_auto{};
+    DrawIndexed deferred_indexed{};DrawVertices deferred_vertices{};
+    DrawIndexedInstances deferred_indexed_instances{};DrawInstances deferred_instances{};
+    DrawIndirect deferred_indexed_indirect{},deferred_indirect{};DrawAuto deferred_auto{};
     SetTargets original_targets{};
     SetTargetsUav original_targets_uav{};
     std::mutex depth_mutex;
@@ -81,6 +105,33 @@ struct State {
 std::atomic<State*> active{};
 std::mutex startup_mutex;
 ThreadValue inside_present;
+void STDMETHODCALLTYPE indexed_detour(ID3D11DeviceContext* context,UINT count,UINT start,INT base){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indexed?s.deferred_indexed:s.original_indexed;draw(context,count,start,base);render::chams_layer::layer.capture(context,[&]{draw(context,count,start,base);});}
+void STDMETHODCALLTYPE vertices_detour(ID3D11DeviceContext* context,UINT count,UINT start){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_vertices?s.deferred_vertices:s.original_vertices;draw(context,count,start);render::chams_layer::layer.capture(context,[&]{draw(context,count,start);});}
+void STDMETHODCALLTYPE indexed_instances_detour(ID3D11DeviceContext* context,UINT count,UINT instances,UINT start,INT base,UINT first){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indexed_instances?s.deferred_indexed_instances:s.original_indexed_instances;draw(context,count,instances,start,base,first);render::chams_layer::layer.capture(context,[&]{draw(context,count,instances,start,base,first);});}
+void STDMETHODCALLTYPE instances_detour(ID3D11DeviceContext* context,UINT count,UINT instances,UINT start,UINT first){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_instances?s.deferred_instances:s.original_instances;draw(context,count,instances,start,first);render::chams_layer::layer.capture(context,[&]{draw(context,count,instances,start,first);});}
+void STDMETHODCALLTYPE indexed_indirect_detour(ID3D11DeviceContext* context,ID3D11Buffer* buffer,UINT offset){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indexed_indirect?s.deferred_indexed_indirect:s.original_indexed_indirect;draw(context,buffer,offset);render::chams_layer::layer.capture(context,[&]{draw(context,buffer,offset);});}
+void STDMETHODCALLTYPE indirect_detour(ID3D11DeviceContext* context,ID3D11Buffer* buffer,UINT offset){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indirect?s.deferred_indirect:s.original_indirect;draw(context,buffer,offset);render::chams_layer::layer.capture(context,[&]{draw(context,buffer,offset);});}
+void STDMETHODCALLTYPE auto_detour(ID3D11DeviceContext* context){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_auto?s.deferred_auto:s.original_auto;draw(context);render::chams_layer::layer.capture(context,[&]{draw(context);});}
+void bind_draw_hooks(State& state){
+    auto** table=*reinterpret_cast<void***>(state.context.Get());
+    ComPtr<ID3D11DeviceContext> deferred;state.device->CreateDeferredContext(0,&deferred);
+    auto** deferred_table=deferred?*reinterpret_cast<void***>(deferred.Get()):nullptr;
+    const auto bind=[&](unsigned index,unsigned slot,void* callback,auto& original,auto& deferred_original){
+        auto& hook=state.draw_hooks[index];hook=std::make_unique<hooks::Hook>(*state.runtime,table[slot],callback);original=hook->template original<std::remove_reference_t<decltype(original)>>();
+        if(deferred_table){
+            if(deferred_table[slot]==table[slot])deferred_original=original;
+            else {auto& copy=state.deferred_draw_hooks[index];copy=std::make_unique<hooks::Hook>(*state.runtime,deferred_table[slot],callback);deferred_original=copy->template original<std::remove_reference_t<decltype(deferred_original)>>();}
+        }
+        hook->enable();if(state.deferred_draw_hooks[index])state.deferred_draw_hooks[index]->enable();
+    };
+    bind(0,12,reinterpret_cast<void*>(&indexed_detour),state.original_indexed,state.deferred_indexed);
+    bind(1,13,reinterpret_cast<void*>(&vertices_detour),state.original_vertices,state.deferred_vertices);
+    bind(2,20,reinterpret_cast<void*>(&indexed_instances_detour),state.original_indexed_instances,state.deferred_indexed_instances);
+    bind(3,21,reinterpret_cast<void*>(&instances_detour),state.original_instances,state.deferred_instances);
+    bind(4,39,reinterpret_cast<void*>(&indexed_indirect_detour),state.original_indexed_indirect,state.deferred_indexed_indirect);
+    bind(5,40,reinterpret_cast<void*>(&indirect_detour),state.original_indirect,state.deferred_indirect);
+    bind(6,38,reinterpret_cast<void*>(&auto_detour),state.original_auto,state.deferred_auto);
+}
 void remember_depth(State& state,ID3D11DeviceContext* context,ID3D11DepthStencilView* view) {
     if(!view || inside_present || !renderer::requires_scene_depth() || context!=state.depth_context.load())return;
     ComPtr<ID3D11Resource> resource;view->GetResource(&resource);
@@ -119,6 +170,38 @@ void STDMETHODCALLTYPE clear_depth_detour(ID3D11DeviceContext* context,ID3D11Dep
         }
     }
     state.original_clear_depth(context,depth,flags,value,stencil);
+}
+bool input_blocked(const State& state){return state.visible.load()&&!state.stopped.load();}
+const bool* __cdecl keys_detour(int* count){
+    auto& state=*active.load();int size{};const auto* keys=state.sdl_keys(&size);if(count)*count=size;
+    static const std::array<bool,512> released{};
+    return input_blocked(state)&&size>=0&&size<=static_cast<int>(released.size())?released.data():keys;
+}
+std::uint32_t __cdecl motion_detour(float* x,float* y){
+    auto& state=*active.load();const auto buttons=state.sdl_motion(x,y);
+    if(input_blocked(state)){if(x)*x=0;if(y)*y=0;return 0;}return buttons;
+}
+std::uint32_t __cdecl buttons_detour(float* x,float* y){
+    auto& state=*active.load();float actual_x{},actual_y{};const auto buttons=state.sdl_buttons(&actual_x,&actual_y);
+    if(input_blocked(state)){if(x)*x=state.blocked_mouse_x;if(y)*y=state.blocked_mouse_y;return 0;}
+    state.blocked_mouse_x=actual_x;state.blocked_mouse_y=actual_y;if(x)*x=actual_x;if(y)*y=actual_y;return buttons;
+}
+void flush_game_input(State& state){
+    if(state.sdl_flush){state.sdl_flush(0x300,0x303);state.sdl_flush(0x400,0x403);}
+}
+void __cdecl pump_detour(){
+    auto& state=*active.load();state.sdl_pump();
+    // WndProc has already copied menu input. Do not let queued SDL motion from
+    // focus recovery reach the game's independent event-based input path.
+    if(input_blocked(state))flush_game_input(state);
+}
+void release_game_keys(State& state,HWND window,WNDPROC previous){
+    if(state.sdl_reset)state.sdl_reset();
+    flush_game_input(state);
+    for(unsigned key=0;key<state.held_keys.size();++key)if(state.held_keys[key]){
+        if(previous)CallWindowProcW(previous,window,(state.held_keys[key]&(LPARAM{1}<<29))?WM_SYSKEYUP:WM_KEYUP,key,state.held_keys[key]|(LPARAM{3}<<30));state.held_keys[key]=0;
+    }
+    if(previous){CallWindowProcW(previous,window,WM_LBUTTONUP,0,0);CallWindowProcW(previous,window,WM_RBUTTONUP,0,0);CallWindowProcW(previous,window,WM_MBUTTONUP,0,0);CallWindowProcW(previous,window,WM_XBUTTONUP,MAKEWPARAM(0,XBUTTON1),0);CallWindowProcW(previous,window,WM_XBUTTONUP,MAKEWPARAM(0,XBUTTON2),0);}
 }
 bool __cdecl relative_detour(void* window, bool enabled) {
     auto& state = *active.load();
@@ -161,13 +244,16 @@ void update_cursor(State& state, HWND window, bool lost_focus = false) {
     }
     if (capture) {
         auto* sdl = state.sdl_mouse_focus();
+        if(!sdl)sdl=state.sdl_window.load();
         if (!sdl) return;
         if (!state.cursor_captured) {
+            if(state.sdl_reset)state.sdl_reset();
             state.sdl_window = sdl;
             state.requested_relative = state.sdl_get_relative(sdl);
             state.requested_grab = state.sdl_get_grab(sdl);
             state.cursor_was_visible = state.sdl_cursor_visible();
             state.cursor_captured = true;
+            if(state.sdl_buttons){float x{},y{};state.sdl_buttons(&x,&y);state.blocked_mouse_x=x;state.blocked_mouse_y=y;}
             POINT pointer{}; GetCursorPos(&pointer);
             state.sdl_relative(sdl, false);
             state.sdl_grab(sdl, false);
@@ -177,6 +263,8 @@ void update_cursor(State& state, HWND window, bool lost_focus = false) {
             ClipCursor(nullptr);
 
         }
+        state.sdl_relative(sdl,false);state.sdl_grab(sdl,false);
+        ReleaseCapture();ClipCursor(nullptr);flush_game_input(state);
         state.sdl_show();
         SetCursor(LoadCursorW(nullptr, IDC_ARROW));
     } else if (state.cursor_captured.exchange(false)) {
@@ -211,6 +299,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         if (message == cursor_message) { update_cursor(*state, window); return 0; }
         if (message == WM_KILLFOCUS) update_cursor(*state, window, true);
         if (message == WM_SETFOCUS) PostMessageW(window, cursor_message, 0, 0);
+        if(message==WM_MOUSEACTIVATE && input_blocked(*state))return MA_ACTIVATEANDEAT;
         if (window == state->window.load() && !state->stopped.load()) {
             if(message==WM_KEYDOWN && wparam==static_cast<WPARAM>(renderer::close_key()))state->close_key_down=wparam;
             if(message==WM_KEYUP && wparam==state->close_key_down.load())state->close_key_down=0;
@@ -223,6 +312,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                 queue_key();state->visible = !state->visible.load();
                 state->focus = state->visible.load();
                 state->mouse = state->keyboard = state->visible.load();
+                if(state->visible)release_game_keys(*state,window,previous);
                 update_cursor(*state, window);
                 overlay_log(state->visible ? "Menu shown (keybind)." : "Menu hidden (keybind).");
                 return 0;
@@ -268,8 +358,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         }
         if (mouse_message(message) || key_message(message)) return 0;
     }
+    if(wparam<state->held_keys.size()){
+        if(message==WM_KEYDOWN||message==WM_SYSKEYDOWN)state->held_keys[wparam]=lparam;
+        if(message==WM_KEYUP||message==WM_SYSKEYUP)state->held_keys[wparam]=0;
+    }
     const auto result = previous ? CallWindowProcW(previous, window, message, wparam, lparam)
                                  : DefWindowProcW(window, message, wparam, lparam);
+    if(message==WM_SETFOCUS && input_blocked(*state)){release_game_keys(*state,window,previous);update_cursor(*state,window);}
     if (message == WM_NCDESTROY) {
         std::lock_guard lock(state->input_mutex);
         state->previous_procedures.erase(window);
@@ -304,6 +399,7 @@ bool attach_window(State& state, HWND window) {
     return true;
 }
 void release_renderer(State& state) {
+    render::chams_layer::layer.reset();
     state.depth_context=nullptr;
     {std::lock_guard depth_lock(state.depth_mutex);state.scene_depth.Reset();state.depth_snapshot.Reset();state.depth_clear_count=0;state.depth_snapshot_ready=false;}
     if (state.initialized) {
@@ -371,6 +467,7 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
             state.original_targets=state.targets_hook->original<SetTargets>();
             state.original_targets_uav=state.targets_uav_hook->original<SetTargetsUav>();
             state.original_clear_depth=state.clear_depth_hook->original<ClearDepth>();
+            bind_draw_hooks(state);
             state.targets_hook->enable();state.targets_uav_hook->enable();
             state.clear_depth_hook->enable();
         }
@@ -394,6 +491,7 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
     if(SUCCEEDED(chain->GetBuffer(0,IID_PPV_ARGS(&back)))){
         D3D11_TEXTURE2D_DESC desc{};back->GetDesc(&desc);
         state.depth_width=desc.Width;state.depth_height=desc.Height;
+        render::chams_layer::layer.configure(state.context.Get(),desc.Width,desc.Height);
     }
     renderer::environment_frame(chain,scene_depth.Get());
     for (const auto& message : messages) {
@@ -495,6 +593,13 @@ void discover(State& state) {
     auto** table = *reinterpret_cast<void***>(chain.Get());
     state.runtime = std::make_unique<hooks::Runtime>();
     if (const auto sdl = GetModuleHandleW(L"SDL3.dll")) {
+        state.sdl_reset=reinterpret_cast<SdlReset>(GetProcAddress(sdl,"SDL_ResetKeyboard"));
+        state.sdl_flush=reinterpret_cast<SdlFlush>(GetProcAddress(sdl,"SDL_FlushEvents"));
+        const auto bind_input=[&](const char* name,void* callback,auto& original,auto& hook){if(auto* target=GetProcAddress(sdl,name)){hook=std::make_unique<hooks::Hook>(*state.runtime,target,callback);original=hook->template original<std::remove_reference_t<decltype(original)>>();}};
+        if(state.sdl_flush)bind_input("SDL_PumpEvents",reinterpret_cast<void*>(&pump_detour),state.sdl_pump,state.pump_hook);
+        bind_input("SDL_GetKeyboardState",reinterpret_cast<void*>(&keys_detour),state.sdl_keys,state.keys_hook);
+        bind_input("SDL_GetRelativeMouseState",reinterpret_cast<void*>(&motion_detour),state.sdl_motion,state.motion_hook);
+        bind_input("SDL_GetMouseState",reinterpret_cast<void*>(&buttons_detour),state.sdl_buttons,state.buttons_hook);
         state.sdl_mouse_focus = reinterpret_cast<SdlWindowQuery>(GetProcAddress(sdl, "SDL_GetMouseFocus"));
         state.sdl_get_relative = reinterpret_cast<SdlWindowGet>(GetProcAddress(sdl, "SDL_GetWindowRelativeMouseMode"));
         state.sdl_get_grab = reinterpret_cast<SdlWindowGet>(GetProcAddress(sdl, "SDL_GetWindowMouseGrab"));
@@ -548,6 +653,10 @@ DWORD start() noexcept {
         if (!state->runtime) discover(*state);
         if (!module::pin()) throw std::runtime_error("Cannot retain overlay callbacks");
         state->hooks_live = true; // Keep callbacks/trampolines valid on partial enable failure.
+        if(state->pump_hook)state->pump_hook->enable();
+        if(state->keys_hook)state->keys_hook->enable();
+        if(state->motion_hook)state->motion_hook->enable();
+        if(state->buttons_hook)state->buttons_hook->enable();
         if (state->warp_hook) state->warp_hook->enable();
         if (state->relative_hook) state->relative_hook->enable();
         if (state->grab_hook) state->grab_hook->enable();
@@ -566,6 +675,7 @@ DWORD start() noexcept {
         if (!state->hooks_live) {
             state->present_hook.reset(); state->present1_hook.reset(); state->resize_hook.reset(); state->runtime.reset();
             state->warp_hook.reset(); state->relative_hook.reset(); state->grab_hook.reset(); state->hide_cursor_hook.reset();
+            state->pump_hook.reset();state->keys_hook.reset();state->motion_hook.reset();state->buttons_hook.reset();
         }
     }
     return 1;

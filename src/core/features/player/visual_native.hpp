@@ -17,7 +17,7 @@ struct Target {
     int visible_styles{},hidden_styles{};
 };
 struct Frame {std::uint64_t sampled{};std::vector<Target> targets;std::array<std::uintptr_t,2> materials{};std::array<std::array<std::uintptr_t,2>,6> layer_materials{};};
-inline std::atomic<std::shared_ptr<const Frame>> frame;
+inline std::atomic<std::shared_ptr<const Frame>> frame,world_frame;
 void bind(std::uintptr_t client,hooks::Runtime& runtime);
 void bind_glow(std::uintptr_t client,hooks::Runtime& runtime);
 void bind_chams(hooks::Runtime& runtime);

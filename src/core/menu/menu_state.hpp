@@ -86,6 +86,7 @@ struct MenuSettings {
   int hotkey{0x2e};
   int close_key{0x1b};
   std::string autoload;
+  std::string inventory_autoload;
   ImVec4 accent{theme::default_accent};
   std::vector<std::optional<ImVec4>> saved_colors;
   bool animations{true};
@@ -119,6 +120,7 @@ struct MenuRuntime {
   char sidebar_search[128]{};
   InventoryNavigation inventory_navigation;
   std::array<int, 2> agent_drafts{};
+  std::string username{"User"};
   MenuState values;
   MenuSettings settings;
   Tab selected{Tab::Player}, transition_tab{Tab::Player};
@@ -181,7 +183,12 @@ struct MenuRuntime {
   int menu_close_key{0x1b};
   float scale{1};
   std::shared_ptr<SettingsIO> settings_io;
-  std::shared_ptr<ConfigIO> config_io;
+  std::shared_ptr<ConfigIO> config_io,inventory_config_io;
+  std::vector<ConfigEntry> inventory_configs;
+  std::string active_inventory_config{"default"},pending_inventory_load,inventory_load_after_save;
+  std::array<char,65> inventory_config_name{};
+  bool inventory_config_busy{},inventory_configs_started{},inventory_config_loaded{},inventory_persist_failed{};
+  std::uint64_t inventory_saved_hash{};
   std::shared_ptr<ImageCache> images;
   int fixture_skin{};
   int inventory_team{}, inventory_slot{-1}, inventory_definition{59},

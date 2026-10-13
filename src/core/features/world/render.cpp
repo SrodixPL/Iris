@@ -22,9 +22,11 @@ float hash(float2 p){return frac(sin(dot(p,float2(127.1,311.7)))*43758.5453);}
 float4 PS(Vertex v):SV_Target{
  float2 uv=v.uv;float3 rgb=scene.Sample(linearSampler,uv).rgb;
  float2 texel=1/dimensions.xy;
- float3 neighbors=(scene.Sample(linearSampler,uv+float2(texel.x,0)).rgb+scene.Sample(linearSampler,uv-float2(texel.x,0)).rgb+
-  scene.Sample(linearSampler,uv+float2(0,texel.y)).rgb+scene.Sample(linearSampler,uv-float2(0,texel.y)).rgb)*.25;
- rgb+=look.z*(rgb-neighbors);
+ if(abs(look.z)>0.00001){
+  float3 neighbors=(scene.Sample(linearSampler,uv+float2(texel.x,0)).rgb+scene.Sample(linearSampler,uv-float2(texel.x,0)).rgb+
+   scene.Sample(linearSampler,uv+float2(0,texel.y)).rgb+scene.Sample(linearSampler,uv-float2(0,texel.y)).rgb)*.25;
+  rgb+=look.z*(rgb-neighbors);
+ }
  rgb*=grade.x;
  float luma=dot(rgb,float3(.2126,.7152,.0722));
  rgb=lerp(luma.xxx,rgb,grade.y);
@@ -87,6 +89,7 @@ EnvironmentRender::EnvironmentRender(ID3D11Device* device):device_(device){
 }
 void EnvironmentRender::draw(ID3D11DeviceContext* context,IDXGISwapChain* chain,const ui::WorldState& w,float,ID3D11Texture2D*){
  if(!w.enabled || !chain)return;
+ if(w.brightness*w.ambient==1&&w.vibrance==1&&w.contrast==1&&w.gamma==1&&w.warmth==0&&w.vignette==0&&w.sharpness==0&&(!w.night_mode||w.night_intensity==0))return;
  ComPtr<ID3D11Texture2D> back; if(FAILED(chain->GetBuffer(0,IID_PPV_ARGS(&back))))return;
  D3D11_TEXTURE2D_DESC desc{};back->GetDesc(&desc);
  // SDR only. Do not interpret an HDR swap chain as an eight-bit scene.

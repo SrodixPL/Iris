@@ -409,7 +409,7 @@ void inventory_picker(MenuRuntime& state) {
         if(ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY))
           canvas.preview_pose[2]=std::clamp(canvas.preview_pose[2]+ImGui::GetIO().MouseWheel*.12f,-1.1f,1.5f);
         if(!ImGui::IsItemActive() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-          ImGui::SetTooltip("Drag to rotate. Scroll to zoom. Double-click to reset.");
+          widgets::tooltipf("Drag to rotate. Scroll to zoom. Double-click to reset.");
       }
       if(!blocked && ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left,4*s)) {
         canvas.preview_dragged=true;
@@ -575,6 +575,7 @@ void page_header(MenuRuntime& state) {
   state.title_bounds={};
   if(state.selected==Page::Legit)legit_profiles::selector(state,210*s);
   else if(state.selected==Page::Player)feature_tree::player_selector(state,210*s);
+  else if(inventory_header)inventory_config_selector(state,210*s);
   ImGui::SetCursorScreenPos({header_origin.x+header_width-search_width-refresh_space,header_origin.y});
   ImGui::SetNextItemWidth(search_width-(state.search[0] ? (theme::more_width+theme::inventory_inset)*s : 0));
   if(state.focus_search) { ImGui::SetKeyboardFocusHere(); state.focus_search=false; }
@@ -601,7 +602,7 @@ void page_header(MenuRuntime& state) {
     const float size=theme::inventory_icon_button*s;
     ImGui::SetCursorScreenPos({header_origin.x+header_width-size,header_origin.y+(header_row-size)*.5f});
     if(inventory_icon_button("##refresh_roster",theme::inventory_refresh_icon,state.icons,size) && state.inventory.adapter.request_refresh)state.inventory.adapter.request_refresh(state.inventory.adapter.owner);
-    if(ImGui::IsItemHovered())ImGui::SetTooltip("Refresh equipped loadout");
+    if(ImGui::IsItemHovered())widgets::tooltipf("Refresh equipped loadout");
   }
   const float result_rows=std::clamp(static_cast<float>(feature_tree::search_result_count(state)),1.f,theme::popup_rows);
   if(widgets::begin_popup("option_search",state.search_bounds,320,theme::popup_padding*2+result_rows*theme::inventory_action_row,nullptr,false,false,false,false,false,true)) {
@@ -707,7 +708,7 @@ void configs(MenuRuntime& state) {
         const bool clicked=widgets::popup_item(label,selected);
         if(destructive) ImGui::PopStyleColor();
         ImGui::EndDisabled();
-        if(reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s",reason);
+        if(reason && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) widgets::tooltipf("%s",reason);
         ImGui::PopID();
         return clicked;
       };
@@ -763,7 +764,7 @@ void inventory_page(MenuRuntime& state) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
     ImGui::BeginChild(open ? "inventory_picker_page" : "inventory_overview",size,ImGuiChildFlags_NavFlattened,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|(interactive ? 0 : ImGuiWindowFlags_NoInputs));
     if(open) inventory_picker(state);
-    else { page_header(state); feature_tree::inventory_options(state); ImGui::Dummy({0,8*state.scale}); if(!canvas.error.empty())ImGui::TextColored(theme::destructive,"%s",canvas.error.c_str()); inventory::render(canvas,state.scale,state.search,state.settings.animations); }
+    else { page_header(state); if(!canvas.error.empty())ImGui::TextColored(theme::destructive,"%s",canvas.error.c_str()); inventory::render(canvas,state.scale,state.search,state.settings.animations); }
     ImGui::EndChild(); ImGui::PopStyleVar(2);
   };
   if(phase<1) view(!picker,1-phase,(picker ? -1 : 1)*phase*theme::inventory_route_slide*state.scale,false);
