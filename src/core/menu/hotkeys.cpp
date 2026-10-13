@@ -1,5 +1,6 @@
 #include "core/menu/hotkeys.hpp"
 #include "core/menu/feature_catalog.hpp"
+#include "core/menu/legit_profiles.hpp"
 #include "core/menu/feature_switches.hpp"
 #include "core/menu/widgets.hpp"
 #include "core/menu/theme.hpp"
@@ -326,6 +327,7 @@ void popup(ImGuiID id,Option& option,Bounds row,Bounds button,bool disabled,bool
 
 namespace {
 bool known_binding(ImGuiID id) {
+  if(legit_profiles::known_scoped_binding(id))return true;
   const auto hash=[](const std::string& path){return ImHashStr(path.c_str(),0,ImHashStr("option bindings"));};
   for(const auto& node:feature_tree::nodes){
     const std::string_view path=node.path;
