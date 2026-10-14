@@ -1,4 +1,3 @@
-#include "core/render/chams_layer.hpp"
 #include "core/features/player/esp/pipeline.hpp"
 #include <d3d11.h>
 #include "core/hooks/dx11.hpp"
@@ -157,11 +156,9 @@ bool iris::renderer::render() noexcept {
         iris::ui::tick_settings(::menu, GetDpiForWindow(host_window) / 96.f);
         iris::ui::tick_bindings(::menu);
         iris::ui::tick_configs(::menu);
-        iris::nospread::safe_mode(::menu.settings.safe_mode);
         ImGui::NewFrame();
         iris::ui::evaluate_bindings(::menu);
         if (menu_visible) iris::menu::render(::menu);
-        iris::nospread::safe_mode(::menu.settings.safe_mode);
         ::popup_open.store(menu_visible && ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel));
         ::binding_active.store(menu_visible && ::menu.key_capture);
         ::inventory_back_active.store(menu_visible && iris::ui::inventory_handles_escape(::menu));
@@ -171,7 +168,6 @@ bool iris::renderer::render() noexcept {
 #endif
         if(!menu_visible && ::menu.images)::menu.images->pump();
         iris::visuals::esp::viewport(ImGui::GetIO().DisplaySize.x,ImGui::GetIO().DisplaySize.y);
-        iris::render::chams_layer::layer.composite();
         const auto lookup=[](void* owner,int definition){
             auto* cache=static_cast<iris::ui::ImageCache*>(owner);if(!cache)return iris::visuals::Icon{};
             const auto art=cache->art(definition,0);
@@ -180,15 +176,13 @@ bool iris::renderer::render() noexcept {
         bool fov_overlay=iris::visuals::draw(lookup,::menu.images.get());
         DWORD world_foreground{};GetWindowThreadProcessId(GetForegroundWindow(),&world_foreground);
         if(!menu_visible && world_foreground==GetCurrentProcessId())iris::world::esp::draw(lookup,::menu.images.get());
-        const auto targeting=iris::nospread::settings.load();
         const auto aiming=iris::nospread::aim_settings.load();
         const auto legit=aiming?aiming->resolve(iris::nospread::legit_weapon_definition.load()):iris::combat::LegitSettings{};
-        const bool rage_fov=iris::nospread::rage_active() && targeting && targeting->visualize_fov;
-        const bool legit_fov=!iris::nospread::rage_active() && legit.enabled && legit.visualize_fov;
+        const bool legit_fov=legit.enabled && legit.visualize_fov;
         DWORD foreground_pid{};GetWindowThreadProcessId(GetForegroundWindow(),&foreground_pid);
-        if(!menu_visible && !iris::nospread::stopped && foreground_pid==GetCurrentProcessId() && iris::nospread::player_alive && (rage_fov || legit_fov)) {
+        if(!menu_visible && !iris::nospread::stopped && foreground_pid==GetCurrentProcessId() && iris::nospread::player_alive && legit_fov) {
             const auto size=ImGui::GetIO().DisplaySize;
-            const auto radius=iris::nospread::fov_radius(rage_fov?targeting->fov:legit.effective_fov(iris::nospread::camera_fov.load()),iris::nospread::camera_fov.load(),size.y);
+            const auto radius=iris::nospread::fov_radius(legit.effective_fov(iris::nospread::camera_fov.load()),iris::nospread::camera_fov.load(),size.y);
             if(radius>0 && radius<std::hypot(size.x,size.y)*.5f) {
                 auto* draw=ImGui::GetBackgroundDrawList();
                 const ImVec2 center{size.x*.5f,size.y*.5f};
@@ -211,10 +205,6 @@ bool iris::renderer::render() noexcept {
             }
             if(hud.crosshair_mode==1&&hud_state->scoped){const auto color=ImGui::ColorConvertFloat4ToU32({hud.crosshair_color[0],hud.crosshair_color[1],hud.crosshair_color[2],hud.crosshair_color[3]});constexpr float gap=4,length=8;draw->AddLine({center.x-gap-length,center.y},{center.x-gap,center.y},color,1.5f);draw->AddLine({center.x+gap,center.y},{center.x+gap+length,center.y},color,1.5f);draw->AddLine({center.x,center.y-gap-length},{center.x,center.y-gap},color,1.5f);draw->AddLine({center.x,center.y+gap},{center.x,center.y+gap+length},color,1.5f);fov_overlay=true;}
             if(hud.inaccuracy_overlay){const float fov=hud_state->fov;const float accuracy=hud_state->accuracy;if(fov>1&&accuracy>0){const float radius=accuracy/std::tan(fov*0.00872664626f)*size.y*.5f;if(std::isfinite(radius)&&radius>0&&radius<std::hypot(size.x,size.y)*.5f){draw->AddCircle(center,radius,IM_COL32(255,255,255,170),64,1.5f);fov_overlay=true;}}}
-        }
-        if(!iris::nospread::stopped && iris::nospread::rage_active() && targeting && targeting->through_walls && targeting->highlight_target && foreground_pid==GetCurrentProcessId()){
-            const auto target=iris::visuals::wall_target.load();
-            if(target)fov_overlay|=iris::visuals::draw_wall_target(*target,GetTickCount64(),::menu.values.cosmetics.player_visuals.chams_hidden_color);
         }
         ImGui::Render();
         if(menu_visible || fov_overlay || ImGui::GetDrawData()->TotalVtxCount>0) {

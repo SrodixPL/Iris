@@ -1,7 +1,6 @@
 #include "core/hooks/dx11.hpp"
 #include "core/module.hpp"
 #include "core/thread_state.hpp"
-#include "core/render/chams_layer.hpp"
 #include <d3d11.h>
 #include "core/hooks/inline_hook.hpp"
 #include "core/log.hpp"
@@ -27,12 +26,6 @@ using Resize = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DX
 using SetTargets = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,ID3D11RenderTargetView* const*,ID3D11DepthStencilView*);
 using SetTargetsUav = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,ID3D11RenderTargetView* const*,ID3D11DepthStencilView*,UINT,UINT,ID3D11UnorderedAccessView* const*,const UINT*);
 using ClearDepth = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,ID3D11DepthStencilView*,UINT,FLOAT,UINT8);
-using DrawIndexed = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,INT);
-using DrawVertices = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT);
-using DrawIndexedInstances = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,UINT,INT,UINT);
-using DrawInstances = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,UINT,UINT,UINT);
-using DrawIndirect = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*,ID3D11Buffer*,UINT);
-using DrawAuto = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*);
 using SdlWindowQuery = void*(__cdecl*)();
 using SdlWindowBool = bool(__cdecl*)(void*, bool);
 using SdlWindowGet = bool(__cdecl*)(void*);
@@ -83,13 +76,6 @@ struct State {
     std::unique_ptr<hooks::Hook> targets_hook,targets_uav_hook;
     std::unique_ptr<hooks::Hook> clear_depth_hook;
     ClearDepth original_clear_depth{};
-    std::array<std::unique_ptr<hooks::Hook>,7> draw_hooks,deferred_draw_hooks;
-    DrawIndexed original_indexed{};DrawVertices original_vertices{};
-    DrawIndexedInstances original_indexed_instances{};DrawInstances original_instances{};
-    DrawIndirect original_indexed_indirect{},original_indirect{};DrawAuto original_auto{};
-    DrawIndexed deferred_indexed{};DrawVertices deferred_vertices{};
-    DrawIndexedInstances deferred_indexed_instances{};DrawInstances deferred_instances{};
-    DrawIndirect deferred_indexed_indirect{},deferred_indirect{};DrawAuto deferred_auto{};
     SetTargets original_targets{};
     SetTargetsUav original_targets_uav{};
     std::mutex depth_mutex;
@@ -105,33 +91,6 @@ struct State {
 std::atomic<State*> active{};
 std::mutex startup_mutex;
 ThreadValue inside_present;
-void STDMETHODCALLTYPE indexed_detour(ID3D11DeviceContext* context,UINT count,UINT start,INT base){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indexed?s.deferred_indexed:s.original_indexed;draw(context,count,start,base);render::chams_layer::layer.capture(context,[&]{draw(context,count,start,base);});}
-void STDMETHODCALLTYPE vertices_detour(ID3D11DeviceContext* context,UINT count,UINT start){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_vertices?s.deferred_vertices:s.original_vertices;draw(context,count,start);render::chams_layer::layer.capture(context,[&]{draw(context,count,start);});}
-void STDMETHODCALLTYPE indexed_instances_detour(ID3D11DeviceContext* context,UINT count,UINT instances,UINT start,INT base,UINT first){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indexed_instances?s.deferred_indexed_instances:s.original_indexed_instances;draw(context,count,instances,start,base,first);render::chams_layer::layer.capture(context,[&]{draw(context,count,instances,start,base,first);});}
-void STDMETHODCALLTYPE instances_detour(ID3D11DeviceContext* context,UINT count,UINT instances,UINT start,UINT first){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_instances?s.deferred_instances:s.original_instances;draw(context,count,instances,start,first);render::chams_layer::layer.capture(context,[&]{draw(context,count,instances,start,first);});}
-void STDMETHODCALLTYPE indexed_indirect_detour(ID3D11DeviceContext* context,ID3D11Buffer* buffer,UINT offset){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indexed_indirect?s.deferred_indexed_indirect:s.original_indexed_indirect;draw(context,buffer,offset);render::chams_layer::layer.capture(context,[&]{draw(context,buffer,offset);});}
-void STDMETHODCALLTYPE indirect_detour(ID3D11DeviceContext* context,ID3D11Buffer* buffer,UINT offset){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_indirect?s.deferred_indirect:s.original_indirect;draw(context,buffer,offset);render::chams_layer::layer.capture(context,[&]{draw(context,buffer,offset);});}
-void STDMETHODCALLTYPE auto_detour(ID3D11DeviceContext* context){auto& s=*active.load();const auto draw=context->GetType()==D3D11_DEVICE_CONTEXT_DEFERRED&&s.deferred_auto?s.deferred_auto:s.original_auto;draw(context);render::chams_layer::layer.capture(context,[&]{draw(context);});}
-void bind_draw_hooks(State& state){
-    auto** table=*reinterpret_cast<void***>(state.context.Get());
-    ComPtr<ID3D11DeviceContext> deferred;state.device->CreateDeferredContext(0,&deferred);
-    auto** deferred_table=deferred?*reinterpret_cast<void***>(deferred.Get()):nullptr;
-    const auto bind=[&](unsigned index,unsigned slot,void* callback,auto& original,auto& deferred_original){
-        auto& hook=state.draw_hooks[index];hook=std::make_unique<hooks::Hook>(*state.runtime,table[slot],callback);original=hook->template original<std::remove_reference_t<decltype(original)>>();
-        if(deferred_table){
-            if(deferred_table[slot]==table[slot])deferred_original=original;
-            else {auto& copy=state.deferred_draw_hooks[index];copy=std::make_unique<hooks::Hook>(*state.runtime,deferred_table[slot],callback);deferred_original=copy->template original<std::remove_reference_t<decltype(deferred_original)>>();}
-        }
-        hook->enable();if(state.deferred_draw_hooks[index])state.deferred_draw_hooks[index]->enable();
-    };
-    bind(0,12,reinterpret_cast<void*>(&indexed_detour),state.original_indexed,state.deferred_indexed);
-    bind(1,13,reinterpret_cast<void*>(&vertices_detour),state.original_vertices,state.deferred_vertices);
-    bind(2,20,reinterpret_cast<void*>(&indexed_instances_detour),state.original_indexed_instances,state.deferred_indexed_instances);
-    bind(3,21,reinterpret_cast<void*>(&instances_detour),state.original_instances,state.deferred_instances);
-    bind(4,39,reinterpret_cast<void*>(&indexed_indirect_detour),state.original_indexed_indirect,state.deferred_indexed_indirect);
-    bind(5,40,reinterpret_cast<void*>(&indirect_detour),state.original_indirect,state.deferred_indirect);
-    bind(6,38,reinterpret_cast<void*>(&auto_detour),state.original_auto,state.deferred_auto);
-}
 void remember_depth(State& state,ID3D11DeviceContext* context,ID3D11DepthStencilView* view) {
     if(!view || inside_present || !renderer::requires_scene_depth() || context!=state.depth_context.load())return;
     ComPtr<ID3D11Resource> resource;view->GetResource(&resource);
@@ -399,7 +358,6 @@ bool attach_window(State& state, HWND window) {
     return true;
 }
 void release_renderer(State& state) {
-    render::chams_layer::layer.reset();
     state.depth_context=nullptr;
     {std::lock_guard depth_lock(state.depth_mutex);state.scene_depth.Reset();state.depth_snapshot.Reset();state.depth_clear_count=0;state.depth_snapshot_ready=false;}
     if (state.initialized) {
@@ -461,7 +419,7 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
         state.render_thread = GetCurrentThreadId();
         state.depth_context=state.context.Get();
         if(GetModuleHandleW(L"client.dll") && !state.targets_hook){
-            overlay_log("DX11 startup: installing depth and draw hooks.");
+            overlay_log("DX11 startup: installing depth hooks.");
             auto** table=*reinterpret_cast<void***>(state.context.Get());
             state.targets_hook=std::make_unique<hooks::Hook>(*state.runtime,table[33],reinterpret_cast<void*>(&targets_detour));
             state.targets_uav_hook=std::make_unique<hooks::Hook>(*state.runtime,table[34],reinterpret_cast<void*>(&targets_uav_detour));
@@ -469,10 +427,9 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
             state.original_targets=state.targets_hook->original<SetTargets>();
             state.original_targets_uav=state.targets_uav_hook->original<SetTargetsUav>();
             state.original_clear_depth=state.clear_depth_hook->original<ClearDepth>();
-            bind_draw_hooks(state);
             state.targets_hook->enable();state.targets_uav_hook->enable();
             state.clear_depth_hook->enable();
-            overlay_log("DX11 startup: depth and draw hooks enabled.");
+            overlay_log("DX11 startup: depth hooks enabled.");
         }
         state.error_reported = false;
         overlay_log("ImGui initialized on the game's DX11 Present thread.");
@@ -494,7 +451,6 @@ void draw(State& state, IDXGISwapChain* chain, UINT flags) {
     if(SUCCEEDED(chain->GetBuffer(0,IID_PPV_ARGS(&back)))){
         D3D11_TEXTURE2D_DESC desc{};back->GetDesc(&desc);
         state.depth_width=desc.Width;state.depth_height=desc.Height;
-        render::chams_layer::layer.configure(state.context.Get(),desc.Width,desc.Height);
     }
     renderer::environment_frame(chain,scene_depth.Get());
     for (const auto& message : messages) {

@@ -318,9 +318,8 @@ void submit(const Configuration& configuration) {
     state.requested = configuration;
     state.inventory_receipt={configuration.revision,InventoryAcceptance::Pending,{}};
     state.inventory_poll=0;
-    nospread::settings.store(std::make_shared<const nospread::Settings>(configuration.no_spread_settings));
     nospread::aim_settings.store(std::make_shared<const combat::Settings>(configuration.combat_settings));
-    nospread::enabled=configuration.no_spread;
+    nospread::enabled=false;
     nospread::hud_enabled=configuration.hud.scope_lines||configuration.hud.scope_hide||configuration.hud.inaccuracy_overlay||configuration.hud.crosshair_mode==1;
     state.accept_enabled=configuration.auto_accept;state.killfeed_enabled=configuration.preserve_killfeed;
 }

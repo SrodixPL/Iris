@@ -43,6 +43,19 @@ void reset_view() {
     state->legit_decision.reset();
     state->view_plan.reset();state->view_generation.reset();state->recoil={};state->locked_target=0;state->smooth_rates={};state->view_pawn=state->view_weapon=0;state->last_view={};state->shot_confirmation.reset();state->trigger_seen=0;++state->trigger_epoch;state->aim_worker.cancel();state->trigger_worker.cancel();state->last_trigger={};
 }
+bool view_matches(Vector value,Vector expected) noexcept {
+    return finite(value)&&finite(expected)&&std::abs(value.x-expected.x)<=1e-5f&&
+        std::abs(std::remainder(value.y-expected.y,360.f))<=1e-5f&&std::abs(value.z-expected.z)<=1e-5f;
+}
+bool publish_view_camera(Address input,const ViewPlan& plan) {
+    const auto camera=camera_angles(input);
+    if(!view_matches(camera,plan.camera_source)&&!view_matches(camera,plan.sent)){
+        state->previous_camera=camera;state->previous_camera_valid=finite(camera);
+        return false;
+    }
+    publish_camera(input,plan.sent);state->previous_camera=plan.sent;state->previous_camera_valid=true;
+    return true;
+}
 bool apply_view(Address proto,const ViewPlan& plan,Transaction* transient=nullptr) {
     if(stopped)return false;
     const auto current=aim_settings.load();if(!current||*current!=plan.config||plan.rage!=rage_active())return false;
@@ -61,10 +74,19 @@ bool apply_view(Address proto,const ViewPlan& plan,Transaction* transient=nullpt
     }
     const auto history=read_native<Repeated>(proto+binding_values::layout_proto_history);
     if(history.size!=static_cast<int>(plan.samples.size())||history.size<0||history.size>maximum_steps||history.capacity<history.size||history.capacity>4096||(history.size&&(!history.rep||read_native<int>(history.rep)<history.size)))return false;
-    Transaction local;auto& tx=transient?*transient:local;auto angles=read_native<Angles>(base.angles);
-    angles.has|=7;angles.x=plan.sent.x;angles.y=plan.sent.y;angles.z=0;tx.put(base.angles,angles);
+    auto angles=read_native<Angles>(base.angles);
+    // Rebuilds may restore the original input or retain our correction. Anything
+    // else belongs to newer player input and must survive without cached writes.
+    const Vector view{angles.x,angles.y,angles.z};
+    if(!view_matches(view,plan.source)&&!view_matches(view,plan.command_sent))return false;
     for(int i=0;i<history.size;++i){const auto at=read_native<Address>(history.rep+8+8*i);const auto h=read_native<History>(at);
         if(h.header.vtable!=state->client+reviewed::history_vtable||!h.messages[0]||!std::isfinite(h.player_fraction)||h.player_tick!=plan.samples[i].tick||h.player_fraction!=plan.samples[i].fraction)return false;
+        const auto a=read_native<Angles>(h.messages[0]);const Vector sample_view{a.x,a.y,a.z};
+        if(!view_matches(sample_view,plan.samples[i].source)&&!view_matches(sample_view,plan.samples[i].sent))return false;
+    }
+    Transaction local;auto& tx=transient?*transient:local;
+    angles.has|=7;angles.x=plan.command_sent.x;angles.y=plan.command_sent.y;angles.z=0;tx.put(base.angles,angles);
+    for(int i=0;i<history.size;++i){const auto at=read_native<Address>(history.rep+8+8*i);const auto h=read_native<History>(at);
         auto a=read_native<Angles>(h.messages[0]);const auto sent=plan.samples[i].sent;a.has|=7;a.x=sent.x;a.y=sent.y;a.z=0;
         tx.put(h.messages[0],a);tx.put(at+offsetof(History,has),h.has|1u);
     }
@@ -99,10 +121,8 @@ void process_view(Address command,bool camera_frame=true) {
     const auto cmd=read_native<Command>(command);if(!cmd.base)return;const auto base=read_native<Base>(cmd.base);
     state->observed_command=cmd.number;state->observed_legacy=base.command_number;state->observed_seed=base.random_seed;state->observed_history=cmd.history.size;state->observed_presence=base.has;
     if(cmd.vtable!=state->client+reviewed::command_vtable || cmd.proto.vtable!=state->client+reviewed::command_proto_vtable || !base.angles || !base.buttons || cmd.history.size<0 || cmd.history.size>maximum_steps || cmd.history.capacity<cmd.history.size || cmd.history.capacity>4096 || (cmd.history.size && (!cmd.history.rep || read_native<int>(cmd.history.rep)<cmd.history.size)) || base.moves.size<0 || base.moves.size>maximum_steps)return;
-    const auto rage_config=settings.load();
-    if(rage_active()&&rage_config&&state->shot_request&&state->shot_request->config==*rage_config&&state->shot_request->blocked&&state->shot_request->number==cmd.number&&state->shot_request->tick==base.tick&&state->shot_request->seed==base.random_seed&&state->shot_request->pawn==pawn_handle){reset_view();return;}
     if(state->view_plan && state->view_plan->raw_number==cmd.number && state->view_plan->seed==base.random_seed && state->view_plan->tick==base.tick && state->view_plan->pawn==pawn && state->view_plan->config==config && state->view_plan->rage==rage_active()) {
-        if(!apply_view(command+offsetof(Command,proto),*state->view_plan))state->view_plan.reset();
+        if(!apply_view(command+offsetof(Command,proto),*state->view_plan)){state->view_plan.reset();state->previous_camera_valid=false;}
         return;
     }
     if(state->plan && rage_active() && state->plan->seed==base.random_seed && state->plan->tick==base.tick){reset_view();legit_status="Rage takes priority";return;}
@@ -322,13 +342,15 @@ void process_view(Address command,bool camera_frame=true) {
     if(!assisted && length(delta)<1e-6f)return;
     ViewPlan plan{base.random_seed,base.tick,pawn,weapon,handle,point,sent,delta,config,rage_active()};
     plan.pawn_handle=pawn_handle;plan.weapon_handle=weapon_handle;plan.raw_number=cmd.number;
+    const auto source=read_native<Angles>(base.angles);plan.source={source.x,source.y,source.z};plan.camera_source=look;
+    plan.command_sent=combat::clamp_angles(plan.source+delta);
     for(int i=0;i<cmd.history.size;++i) {
         const auto h=read_native<History>(read_native<Address>(cmd.history.rep+8+8*i));
         if(h.header.vtable!=state->client+reviewed::history_vtable || !h.messages[0] || !std::isfinite(h.player_fraction))return;
         const auto a=read_native<Angles>(h.messages[0]);
         if(!finite({a.x,a.y,a.z}))return;
-        plan.samples.push_back({h.player_tick,h.player_fraction,combat::clamp_angles(Vector{a.x,a.y,0}+delta)});
+        plan.samples.push_back({h.player_tick,h.player_fraction,combat::clamp_angles(Vector{a.x,a.y,0}+delta),{a.x,a.y,a.z}});
     }
     state->view_plan=std::move(plan);
-    if(!apply_view(command+offsetof(Command,proto),*state->view_plan))state->view_plan.reset();
+    if(!apply_view(command+offsetof(Command,proto),*state->view_plan)){state->view_plan.reset();state->previous_camera_valid=false;}
 }

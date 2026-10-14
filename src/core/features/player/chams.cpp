@@ -7,7 +7,6 @@
 #include "core/sdk/visual_bindings.hpp"
 #include "util/memory.hpp"
 #include "core/log.hpp"
-#include "core/render/chams_layer.hpp"
 #include <cstdio>
 #include <Windows.h>
 
@@ -63,24 +62,22 @@ void __fastcall draw_hook(Address descriptor,Address context,Address meshes,int 
         if(!hidden&&!visible)continue;
         if(i>pending)draw_original(descriptor,context,meshes+sizeof(*primitive)*pending,i-pending,view,layer,stats);
         matched.fetch_add(1,std::memory_order_relaxed);
-        const auto pass=[&](Address material,const std::array<float,4>& color,bool hidden_pass=false){
+        const auto pass=[&](Address material,const std::array<float,4>& color){
             auto mesh=*primitive;
             if(material)mesh.material=mesh.material_copy=material;
             mesh.color=packed(color);mesh.opacity=1.f;
             passes.fetch_add(1,std::memory_order_relaxed);
-            struct Marker {std::uintptr_t previous{render::chams_layer::hidden_pass};~Marker(){render::chams_layer::hidden_pass=previous;}} marker;
-            render::chams_layer::hidden_pass=hidden_pass?1:target->hidden_chams?2:0;
             draw_original(descriptor,context,reinterpret_cast<Address>(&mesh),1,view,layer,stats);
         };
         bool drawn{};
         if(layered){
-            for(unsigned style=0;style<source->layer_materials.size();++style)if(hidden&&(target->hidden_styles&(1<<style))&&source->layer_materials[style][1])pass(source->layer_materials[style][1],target->hidden_color,true);
+            for(unsigned style=0;style<source->layer_materials.size();++style)if(hidden&&(target->hidden_styles&(1<<style))&&source->layer_materials[style][1])pass(source->layer_materials[style][1],target->hidden_color);
             for(unsigned style=0;style<source->layer_materials.size();++style)if(visible&&(target->visible_styles&(1<<style))&&source->layer_materials[style][0]){pass(source->layer_materials[style][0],target->visible_color);drawn=true;}
         }else{
-            if(hidden)pass(source->materials[1],target->hidden_color,true);
+            if(hidden)pass(source->materials[1],target->hidden_color);
             if(visible){pass(target->original_material?0:source->materials[0],target->visible_color);drawn=true;}
         }
-        if(!drawn){struct Marker {std::uintptr_t previous{render::chams_layer::hidden_pass};~Marker(){render::chams_layer::hidden_pass=previous;}} marker;render::chams_layer::hidden_pass=target->hidden_chams?2:0;draw_original(descriptor,context,address,1,view,layer,stats);}
+        if(!drawn)draw_original(descriptor,context,address,1,view,layer,stats);
         pending=i+1;
     }
     if(pending<count)draw_original(descriptor,context,meshes+sizeof(sdk::visual_bindings::Primitive)*pending,count-pending,view,layer,stats);
@@ -128,12 +125,13 @@ std::array<Address,2> prepare_materials(int style) {
 }
 void report() {
     static std::uint64_t next{};const auto now=GetTickCount64();if(now<next)return;next=now+10000;
-    const auto value=frame.load();char text[256];
-    std::snprintf(text,sizeof(text),"Player chams: targets=%zu material_data=%p/%p submitted=%llu matched=%llu passes=%llu GPU_layered=%llu",value?value->targets.size():0,
+    const auto value=frame.load();const auto world=world_frame.load();
+    if((!value||value->targets.empty())&&(!world||world->targets.empty()))return;
+    char text[256];
+    std::snprintf(text,sizeof(text),"Player chams: targets=%zu material_data=%p/%p submitted=%llu matched=%llu passes=%llu",value?value->targets.size():0,
         reinterpret_cast<void*>(value?value->materials[0]:0),reinterpret_cast<void*>(value?value->materials[1]:0),
-        static_cast<unsigned long long>(submitted.load()),static_cast<unsigned long long>(matched.load()),static_cast<unsigned long long>(passes.load()),static_cast<unsigned long long>(render::chams_layer::layer.captures()));
+        static_cast<unsigned long long>(submitted.load()),static_cast<unsigned long long>(matched.load()),static_cast<unsigned long long>(passes.load()));
     overlay_log(text);
-    const auto counts=render::chams_layer::layer.diagnostics();std::snprintf(text,sizeof(text),"Chams GPU bridge: marked=%llu rejected_context=%llu rejected_viewport=%llu",static_cast<unsigned long long>(counts[0]),static_cast<unsigned long long>(counts[1]),static_cast<unsigned long long>(counts[2]));overlay_log(text);
 }
 
 }

@@ -9,7 +9,8 @@
 #include <cstdint>
 namespace iris::nospread {
 inline std::atomic<bool> enabled{},round_frozen{},rage_allowed{};
-inline bool rage_active() noexcept {return enabled.load()&&rage_allowed.load();}
+// Rage base adapters are retained, but the shipped runtime is disconnected.
+inline constexpr bool rage_active() noexcept {return false;}
 inline void safe_mode(int mode) noexcept {rage_allowed=mode==2;}
 inline std::atomic<const char*> movement_status{"Disabled"};
 inline std::atomic<std::shared_ptr<const Settings>> settings;

@@ -212,8 +212,7 @@ void movement_command(Address command) {
     const auto physical=native.value_or(movement::directions(keys));state->observed_native_input=bool(native);state->observed_input=physical;
     if(native){keys&=~movement_directions;keys|=(physical[0]>.001f?8:physical[0]<-.001f?16:0)|(physical[1]>.001f?512:physical[1]<-.001f?1024:0);}
     const auto physics=air_physics(services);state->observed_cap=physics?physics->cap:0;state->observed_acceleration=physics?physics->accelerate:0;
-    const auto rage_config=settings.load();const auto& shot=state->shot_request;const auto weapons=read_native<Address>(pawn+f.services);
-    const bool rage_stop=rage_active()&&rage_config&&shot&&shot->config==*rage_config&&shot->stop&&shot->number==cmd.number&&shot->tick==base.tick&&shot->seed==base.random_seed&&shot->pawn==handle&&weapons&&read_native<std::uint32_t>(weapons+f.active)==shot->weapon;
+    constexpr bool rage_stop=false;
     std::optional<SteeringPlan> plan;
     for(auto i=state->steering_plans.rbegin();i!=state->steering_plans.rend();++i)
         if(i->number==cmd.number&&i->tick==base.tick&&i->seed==base.random_seed&&i->pawn==handle&&i->config==*config&&i->rage_stop==rage_stop){plan=*i;break;}

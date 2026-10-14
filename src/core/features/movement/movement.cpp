@@ -21,7 +21,7 @@ void publish_movement(Runtime& state) {
     static_cast<movement::Options&>(settings.options)=f.movement_options;
     settings.slow_walk=f.movement_options.slow_walk;
     settings.quick_stop=f.movement_options.quick_stop;
-    settings.rage_stop=nospread::rage_active()&&f.no_spread_settings.quick_stop;
+    settings.rage_stop=false;
     const auto published=nospread::movement_settings.load();
     if(state.stopping)nospread::movement_settings.store(nullptr);
     else if(!published||*published!=settings)nospread::movement_settings.store(std::make_shared<const movement::Settings>(settings));

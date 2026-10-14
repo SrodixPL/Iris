@@ -434,10 +434,6 @@
       <ObjectFileName>$(IntDir)src\core\</ObjectFileName>
     </ClCompile>
     <ClInclude Include="src\core\module.hpp" />
-    <ClCompile Include="src\core\render\chams_layer.cpp">
-      <ObjectFileName>$(IntDir)src\core\render\</ObjectFileName>
-    </ClCompile>
-    <ClInclude Include="src\core\render\chams_layer.hpp" />
     <ClCompile Include="src\core\render\renderer.cpp">
       <ObjectFileName>$(IntDir)src\core\render\</ObjectFileName>
     </ClCompile>

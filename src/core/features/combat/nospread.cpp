@@ -58,8 +58,8 @@ struct Fields {int pawn{},player_pawn{},health{},team{},scene{},origin{},view{},
 // raw command number and tick deduplicate preparation without treating the seed as a sequence.
 struct Plan {int seed{},tick{},history_index{},shot_tick{};Address pawn{},weapon{};std::uint32_t target{};Solution solution;Vector point{},view{};Settings config;bool automatic{};int region{};std::uint32_t pawn_handle{},weapon_handle{};std::int64_t raw_number{};bool camera_applied{};};
 struct ShotRequest {std::int64_t number{};int tick{},seed{};std::uint32_t pawn{},weapon{};Settings config;bool stop{},blocked{},scope{};};
-struct ViewSample {int tick{};float fraction{};Vector sent{};};
-struct ViewPlan {int seed{},tick{};Address pawn{},weapon{};std::uint32_t target{};Vector point{},sent{},delta{};combat::Settings config;bool rage{},camera_applied{};std::vector<ViewSample> samples;std::uint32_t pawn_handle{},weapon_handle{};std::int64_t raw_number{};};
+struct ViewSample {int tick{};float fraction{};Vector sent{},source{};};
+struct ViewPlan {int seed{},tick{};Address pawn{},weapon{};std::uint32_t target{};Vector point{},sent{},delta{};combat::Settings config;bool rage{},camera_applied{};std::vector<ViewSample> samples;std::uint32_t pawn_handle{},weapon_handle{};std::int64_t raw_number{};Vector source{},camera_source{},command_sent{};};
 struct TriggerPlan {int seed{},tick{},player_tick{};float player_fraction{};std::uint32_t pawn{},weapon{},target{};Vector view{};std::shared_ptr<const combat::Settings> generation;};
 struct MovementObservation {std::int64_t number{};int tick{},seed{};std::uint32_t pawn{};bool grounded{};Vector origin{},velocity{};float duck{};};
 struct MovementEdit {std::int64_t number{};int tick{},seed{};std::uint32_t pawn{};movement::Axes terminal{},baseline{};movement::Settings config;};
@@ -153,14 +153,14 @@ struct State {
     ULONGLONG logged{},performance_log{};
     ULONGLONG rejection_logged{};std::uint64_t rejected_commands{};
     ULONGLONG hud_sampled{},transition_logged{};std::uint32_t hud_pawn{},hud_weapon{};bool hud_scoped{};
-    const char* last_rage_status{},*last_movement_status{};
-    std::optional<Settings> logged_rage;std::optional<combat::Settings> logged_aim;std::optional<movement::Settings> logged_movement;
+    const char* last_movement_status{};
+    std::optional<combat::Settings> logged_aim;std::optional<movement::Settings> logged_movement;
     std::uint64_t prepared_shots{},encoded_shots{},rejected_shots{},chance_samples{},chance_hits{},chance_budget{},native_encode_failures{};
     bool encoding_shot{},encoding_rejected{};float observed_accuracy{},observed_spread{},observed_damage{};std::uint32_t observed_target{};
     int scan_tick{-1};std::uint32_t scan_pawn{},scan_weapon{};Settings scan_config;bool scan_manual{};
     std::uint64_t scans{},scan_skips{},scan_exhausted{},scan_candidates{};
     std::uint64_t movement_commands{},frames{},rays{},penetration_traces{},wall_hits{},wall_stops{},empty_traces{},other_contacts{},seed_calls{};
-    double combat_ms{},combat_peak{},encode_ms{},encode_peak{};std::uint64_t encodes{};
+    std::uint64_t encodes{};
     std::array<double,4> process_stages{},process_stage_peaks{};
     std::array<double,6> encode_stages{},encode_stage_peaks{};
 };
@@ -168,7 +168,7 @@ State* state{};
 bool context() {
     DWORD pid{};GetWindowThreadProcessId(GetForegroundWindow(),&pid);
     const auto aim=aim_settings.load();const auto motion=movement_settings.load();
-    return !stopped && (hud_enabled || (motion && motion->active()) || rage_active() || (aim && aim->active())) && pid==GetCurrentProcessId() && !renderer::menu_open();
+    return !stopped && (hud_enabled || (motion && motion->active()) || (aim && aim->active())) && pid==GetCurrentProcessId() && !renderer::menu_open();
 }
 Address controller_at(int index) {
     const auto chunks=read_native<Address>(state->client+cosmetics::bindings::entity_chunks);
@@ -462,7 +462,8 @@ void sample_hud() {
     if(!hud_enabled){hud_snapshot.store(nullptr);return;}
     const auto& f=state->f;const auto controller=read_native<Address>(state->client+cosmetics::bindings::local_controller);
     const auto pawn=controller?sdk::entity(state->client,read_native<std::uint32_t>(controller+f.pawn)):0;
-    if(!pawn||read_native<int>(pawn+f.health)<=0){hud_snapshot.store(nullptr);return;}
+    player_alive=pawn&&read_native<int>(pawn+f.health)>0;
+    if(!player_alive){hud_snapshot.store(nullptr);return;}
     const auto camera=read_native<Address>(pawn+f.camera);const auto value=camera?read_native<unsigned>(camera+f.camera_fov):90u;
     const auto services=read_native<Address>(pawn+f.services);const auto weapon_handle=services?read_native<std::uint32_t>(services+f.active):0xffffffffu;const auto weapon=services?sdk::entity(state->client,weapon_handle):0;
     const auto handle=read_native<std::uint32_t>(controller+f.pawn);const bool scoped=read_native<bool>(pawn+f.scoped);const auto now=GetTickCount64();
@@ -477,22 +478,19 @@ void sample_hud() {
     hud_snapshot.store(std::make_shared<const HudSnapshot>(HudSnapshot{read_native<bool>(pawn+f.scoped),accuracy,cosmetics::camera_fov(value>1&&value<179?static_cast<float>(value):90.f,camera),GetTickCount64()}));
 }
 void safe_process(Address command,bool view) {
-    const auto started=std::chrono::steady_clock::now();
     const auto phase=[&](int index,const char* name,const auto& action){
         state->native_stage=name;const auto before=std::chrono::steady_clock::now();
         try{action();}catch(const std::exception& e){suspend(e.what());}
         const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-before).count();
         state->process_stages[index]+=elapsed;state->process_stage_peaks[index]=std::max(state->process_stage_peaks[index],elapsed);
     };
-    phase(0,"Rage planning",[&]{process(command);});
     if(view&&!stopped){
         phase(1,"HUD sampling",[]{sample_hud();});
         phase(2,"movement planning",[&]{movement_command(command);const auto motion=movement_settings.load();if(motion&&motion->active()&&!round_frozen)plan_jumps(command,*motion,(GetAsyncKeyState(VK_SPACE)&0x8000)!=0);});
         const auto config=aim_settings.load();
         if(config&&config->active())phase(3,"aim planning",[&]{process_view(command,true);});
     }
-    const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
-    ++state->frames;state->combat_ms+=elapsed;state->combat_peak=std::max(state->combat_peak,elapsed);
+    ++state->frames;
 }
 int report_native_fault(EXCEPTION_POINTERS* exception) noexcept {
     char message[256]{};
@@ -576,34 +574,17 @@ bool restore_wire(Address proto,const WireSnapshot& wire,Transaction& tx) {
     }
     return true;
 }
-bool safe_apply(Address proto,Transaction* transient,bool cancel_only=false) {
+bool safe_apply(Address proto,Transaction* transient) {
     try {
         state->encoding_shot=state->encoding_rejected=false;
-        if(state->plan){
-            const auto base_at=read_native<Address>(proto+binding_values::layout_proto_base);const auto base=read_native<Base>(base_at);
-            if(base.tick==state->plan->tick&&base.random_seed==state->plan->seed){
-                if(!cancel_only&&rage_active()&&apply(proto,*state->plan,*transient)){state->encoding_shot=true;return true;}
-                ++state->rejected_shots;
-                if(state->plan->automatic&&base.buttons&&base.angles){
-                    auto buttons=read_native<Buttons>(base.buttons);buttons.value&=~attack;buttons.changed|=attack;buttons.scroll&=~attack;buttons.has|=7;
-                    transient->put(base.buttons,buttons);
-                    transient->put(proto+binding_values::layout_proto_attack_history,-1);
-                    transient->put(proto+binding_values::layout_proto_presence,read_native<std::uint32_t>(proto+binding_values::layout_proto_presence)&~0x20u);
-                    for(int i=0;i<base.moves.size;++i){const auto at=read_native<Address>(base.moves.rep+8+8*i);const auto step=read_native<Step>(at);if((step.has&1)&&(step.button&attack))transient->put(at+offsetof(Step,pressed),false);}
-                    checksum(base_at,base,buttons,read_native<Angles>(base.angles),*transient);return true;
-                }
-                return false;
-            }
-        }
-        if(cancel_only)return false;
         const auto base=read_native<Base>(read_native<Address>(proto+binding_values::layout_proto_base));
         bool applied=false;
         if(state->view_plan&&state->view_plan->seed==base.random_seed&&state->view_plan->tick==base.tick)applied=apply_view(proto,*state->view_plan,transient);
         return apply_trigger(proto,*transient)||applied;
     }catch(const std::exception& e){state->encoding_rejected=true;suspend(e.what());return false;}
 }
-bool guarded_apply(Address proto,Transaction* transient,bool cancel_only=false) {
-    __try {state->native_stage="command encoding";return safe_apply(proto,transient,cancel_only);}__except(report_native_fault(GetExceptionInformation())){return false;}
+bool guarded_apply(Address proto,Transaction* transient) {
+    __try {state->native_stage="command encoding";return safe_apply(proto,transient);}__except(report_native_fault(GetExceptionInformation())){return false;}
 }
 Address guarded_current_command(Address controller) noexcept {
     __try {return current_command(controller);}__except(EXCEPTION_EXECUTE_HANDLER){return 0;}
@@ -612,25 +593,21 @@ void __fastcall create_move(void* input,int slot,bool active) {
     state->original_move(input,slot,active);
     if(slot)return;
     std::lock_guard lock(state->mutex);
-    if(!active || !context()){visuals::wall_target.store(nullptr);hud_snapshot.store(nullptr);player_alive=false;if(!state->plan||!state->plan->automatic||rage_active())state->plan.reset();state->shot_request.reset();state->rage_gate.reset();state->processed=0;reset_view();return;}
+    if(!active || !context()){hud_snapshot.store(nullptr);player_alive=false;reset_view();return;}
     try {const auto controller=read_native<Address>(state->client+cosmetics::bindings::local_controller);if(controller){const auto command=guarded_current_command(controller);if(command){guarded_process(command,true);
-        if(!stopped&&state->plan&&!state->plan->config.silent_aim&&!state->plan->camera_applied){
-            const auto raw=read_native<Command>(command);
-            Transaction tx;
-            if(state->plan->raw_number==raw.number&&apply(command+offsetof(Command,proto),*state->plan,tx)){
-                publish_camera(reinterpret_cast<Address>(input),state->plan->solution.sent);state->plan->camera_applied=true;
-            }
-        }
-        if(!stopped && state->view_plan && !state->view_plan->camera_applied && apply_view(command+offsetof(Command,proto),*state->view_plan)) {
-            publish_camera(reinterpret_cast<Address>(input),state->view_plan->sent);state->view_plan->camera_applied=true;
+        if(!stopped && state->view_plan && !state->view_plan->camera_applied) {
+            auto& plan=*state->view_plan;
+            if(!apply_view(command+offsetof(Command,proto),plan)){state->view_plan.reset();state->previous_camera_valid=false;}
+            else if(publish_view_camera(reinterpret_cast<Address>(input),plan))plan.camera_applied=true;
+            else state->view_plan.reset();
         }
     }}}
-    catch(const std::exception&){state->plan.reset();reset_view();}
+    catch(const std::exception&){reset_view();}
 }
 void __fastcall prepare(Address command) {
     state->original_prepare(command);
     std::lock_guard lock(state->mutex);
-    if(context()){try{capture_direction_input(command);}catch(const std::exception&){}guarded_process(command);}
+    if(context()){try{capture_direction_input(command);}catch(const std::exception&){}}
 }
 bool align_impulse(Address address,const Base& base,movement::Axes actual,Transaction& tx,std::optional<movement::Axes> wanted={}) {
     auto initial=movement::Axes{base.forward,base.left};std::vector<Step> steps;int first=-1;
@@ -733,11 +710,7 @@ bool align_encoded_steering(Address from,Address to,Transaction& tx,movement::Ax
 }
 void log_input_changes() {
     const auto now=GetTickCount64();char message[768]{};
-    const auto rage=settings.load();const auto aim=aim_settings.load();const auto motion=movement_settings.load();
-    if(rage&&(!state->logged_rage||*state->logged_rage!=*rage)){
-        state->logged_rage=*rage;
-        std::snprintf(message,sizeof(message),"Settings Rage: auto=%d silent=%d walls=%d spread=%d recoil=%d FOV=%.1f chance=%.0f damage=%.0f HP_relative=%d stop=%d scope=%d delay=%d delay_ms=%.0f multipoint=%d scale=%.2f hitboxes=%d%d%d%d%d%d",rage->auto_fire,rage->silent_aim,rage->through_walls,rage->compensate,rage->remove_recoil,rage->fov,rage->hit_chance,rage->minimum_damage,rage->health_damage,rage->quick_stop,rage->quick_scope,rage->delay_shot,rage->shot_delay,rage->multipoint,rage->multipoint_scale,rage->hitboxes[0],rage->hitboxes[1],rage->hitboxes[2],rage->hitboxes[3],rage->hitboxes[4],rage->hitboxes[5]);overlay_log(message);
-    }
+    const auto aim=aim_settings.load();const auto motion=movement_settings.load();
     if(aim&&(!state->logged_aim||*state->logged_aim!=*aim)){
         state->logged_aim=*aim;
         const auto definition=legit_weapon_definition.load();const auto selected=aim->resolve(definition);
@@ -747,9 +720,9 @@ void log_input_changes() {
         state->logged_movement=*motion;const auto& o=motion->options;
         std::snprintf(message,sizeof(message),"Settings movement: bhop=%d humanize=%d chance=%.0f limit=%.0f assist=%d strength=%.2f",motion->bhop,o.humanize,o.chance,o.attempt_limit,motion->keys,motion->strength);overlay_log(message);
     }
-    if(now-state->transition_logged>=250&&(state->last_rage_status!=status.load()||state->last_movement_status!=movement_status.load())){
-        state->transition_logged=now;state->last_rage_status=status.load();state->last_movement_status=movement_status.load();
-        std::snprintf(message,sizeof(message),"Input state: stopped=%d rage=%d freeze=%d raw=%lld seed=%d Rage=%s movement=%s",stopped.load(),rage_active(),round_frozen.load(),state->observed_command,state->observed_seed,state->last_rage_status,state->last_movement_status);overlay_log(message);
+    if(now-state->transition_logged>=250&&(state->last_movement_status!=movement_status.load())){
+        state->transition_logged=now;state->last_movement_status=movement_status.load();
+        std::snprintf(message,sizeof(message),"Input state: stopped=%d freeze=%d raw=%lld seed=%d movement=%s",stopped.load(),round_frozen.load(),state->observed_command,state->observed_seed,state->last_movement_status);overlay_log(message);
     }
 }
 bool __fastcall encode(Address from,Address to,Address buffer,int limit) {
@@ -762,7 +735,16 @@ bool __fastcall encode(Address from,Address to,Address buffer,int limit) {
         Transaction baseline,transient;
         try {
             const auto from_base=from?read_native<Address>(from+binding_values::layout_proto_base):0;const auto base=from_base?read_native<Base>(from_base):Base{};
-            for(auto i=state->wire.rbegin();from_base && from!=to && i!=state->wire.rend();++i)if(i->seed==base.random_seed && i->tick==base.tick){if(!restore_wire(from,*i,baseline))throw std::runtime_error("Encoded baseline no longer matches command layout");break;}
+            for(auto i=state->wire.rbegin();from_base && from!=to && i!=state->wire.rend();++i)if(i->seed==base.random_seed && i->tick==base.tick){
+                if(!restore_wire(from,*i,baseline)){
+                    // A rebuilt native timeline can legitimately stop matching our cache.
+                    // Restore partial replay before forwarding the untouched command.
+                    baseline.rollback();state->wire.clear();
+                    suspend("Encoded baseline no longer matches command layout; forwarding native command");
+                    return state->original_encode(from,to,buffer,limit);
+                }
+                break;
+            }
             stage(0);state->encoding_shot=state->encoding_rejected=false;
             if(context()){
                 const auto steering=owned_steering(to);
@@ -775,9 +757,6 @@ bool __fastcall encode(Address from,Address to,Address buffer,int limit) {
                     if(applied&&current_base.angles)source=movement::rotate(source,std::remainder(read_native<Angles>(current_base.angles).y-original_yaw,360.f));
                     applied=align_encoded_steering(from,to,transient,source)||applied;
                 }
-            }else if(!stopped&&!rage_active()&&state->plan&&state->plan->automatic){
-                applied=guarded_apply(to,&transient,true);
-                if(state->encoding_rejected)throw std::runtime_error("Pending attack cancellation rejected");
             }
             if(!applied)transient.rollback();stage(1);
             std::optional<WireSnapshot> wire;if(applied)wire=capture_wire(to,transient);stage(2);
@@ -789,16 +768,13 @@ bool __fastcall encode(Address from,Address to,Address buffer,int limit) {
         }catch(const std::exception& e){transient.rollback();baseline.rollback();suspend(e.what());if(!called)++state->native_encode_failures;}
         transient.rollback();baseline.rollback();stage(5);
     }
-    const auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
-    ++state->encodes;state->encode_ms+=elapsed;state->encode_peak=std::max(state->encode_peak,elapsed);
+    ++state->encodes;
     log_input_changes();
-    if(GetTickCount64()-state->performance_log>2000) {
+    if(GetTickCount64()-state->performance_log>10000) {
         state->performance_log=GetTickCount64();char message[768]{};
-        std::snprintf(message,sizeof(message),"Combat perf: callbacks=%llu mean=%.3fms peak=%.3fms rays=%llu penetration=%llu wall_hits=%llu wall_stops=%llu empty=%llu other_contacts=%llu seed_calls=%llu movement_commands=%llu rage=%d status=%s raw=%lld legacy=%d presence=%x command_seed=%d history=%d encode_mean=%.3fms encode_peak=%.3fms",state->frames,state->combat_ms/static_cast<double>(std::max<std::uint64_t>(state->frames,1)),state->combat_peak,state->rays,state->penetration_traces,state->wall_hits,state->wall_stops,state->empty_traces,state->other_contacts,state->seed_calls,state->movement_commands,rage_active()?1:0,status.load(),state->observed_command,state->observed_legacy,state->observed_presence,state->observed_seed,state->observed_history,state->encodes?state->encode_ms/static_cast<double>(state->encodes):0,state->encode_peak);overlay_log(message);
         const auto frames=static_cast<double>(std::max<std::uint64_t>(state->frames,1));
-        std::snprintf(message,sizeof(message),"Input stages mean/peak ms: Rage=%.3f/%.3f HUD=%.3f/%.3f movement=%.3f/%.3f aim=%.3f/%.3f; scan=%llu skipped=%llu budget_exhausted=%llu candidates=%llu; shot prepared/encoded/rejected=%llu/%llu/%llu chance hits/samples=%llu/%llu chance_budget=%llu native_encode_failed=%llu rejected_commands=%llu",state->process_stages[0]/frames,state->process_stage_peaks[0],state->process_stages[1]/frames,state->process_stage_peaks[1],state->process_stages[2]/frames,state->process_stage_peaks[2],state->process_stages[3]/frames,state->process_stage_peaks[3],state->scans,state->scan_skips,state->scan_exhausted,state->scan_candidates,state->prepared_shots,state->encoded_shots,state->rejected_shots,state->chance_hits,state->chance_samples,state->chance_budget,state->native_encode_failures,state->rejected_commands);overlay_log(message);
-        state->process_stages.fill(0);state->process_stage_peaks.fill(0);state->scans=state->scan_skips=state->scan_exhausted=state->scan_candidates=0;
-        state->prepared_shots=state->encoded_shots=state->rejected_shots=state->chance_samples=state->chance_hits=state->chance_budget=state->native_encode_failures=0;
+        std::snprintf(message,sizeof(message),"Input stages mean/peak ms: HUD=%.3f/%.3f movement=%.3f/%.3f aim=%.3f/%.3f; rays=%llu native_encode_failed=%llu rejected_commands=%llu",state->process_stages[1]/frames,state->process_stage_peaks[1],state->process_stages[2]/frames,state->process_stage_peaks[2],state->process_stages[3]/frames,state->process_stage_peaks[3],state->rays,state->native_encode_failures,state->rejected_commands);overlay_log(message);
+        state->process_stages.fill(0);state->process_stage_peaks.fill(0);state->native_encode_failures=0;
         const auto prediction_count=static_cast<double>(std::max<std::uint64_t>(state->prediction_calls,1));
         std::snprintf(message,sizeof(message),"Input prediction mean/peak ms: movement_plan=%.3f/%.3f native_RunCommand=%.3f/%.3f calls=%llu",state->prediction_plan_ms/prediction_count,state->prediction_plan_peak,state->prediction_native_ms/prediction_count,state->prediction_native_peak,state->prediction_calls);overlay_log(message);
         state->prediction_plan_ms=state->prediction_plan_peak=state->prediction_native_ms=state->prediction_native_peak=0;
@@ -808,11 +784,7 @@ bool __fastcall encode(Address from,Address to,Address buffer,int limit) {
         const auto motion=movement_settings.load();
         if(motion){const auto v=state->observed_velocity;std::snprintf(message,sizeof(message),"Input planner: bhop=%d chance=%.0f limit=%.0f jump_writes=%llu retries=%llu grounded=%d speed=%.1f assist=%d strength=%.2f status=%s",motion->bhop,motion->options.chance,motion->options.attempt_limit,state->jump_writes,state->jump_retries,state->observed_grounded,std::hypot(v.x,v.y),motion->keys,motion->strength,movement_status.load());overlay_log(message);}
         state->jump_writes=state->jump_retries=0;
-        state->movement_commands=state->frames=state->rays=state->penetration_traces=state->wall_hits=state->wall_stops=state->empty_traces=state->other_contacts=state->seed_calls=0;state->combat_ms=state->combat_peak=state->encode_ms=state->encode_peak=0;state->encodes=0;state->prediction_calls=state->native_steering=0;
-    }
-    if(applied && rage_active() && state->plan && GetTickCount64()-state->logged>1000) {
-        state->logged=GetTickCount64();const auto& plan=*state->plan;char text[256]{};
-        std::snprintf(text,sizeof(text),"Rage: command_seed=%d shot_tick=%d spread_seed=%u ray_error=%.8f encoded=%d target=%x damage=%.1f accuracy=%.4f spread=%.4f; server hit unverified",plan.seed,plan.shot_tick,plan.solution.seed,plan.solution.error,result&&state->encoding_shot,state->observed_target,state->observed_damage,state->observed_accuracy,state->observed_spread);overlay_log(text);
+        state->frames=state->rays=state->encodes=state->prediction_calls=state->native_steering=0;
     }
     return result;
 }
@@ -849,6 +821,5 @@ void bind(Address client,Address scope,hooks::Runtime& hooks) {
     value->prediction=std::make_unique<hooks::Hook>(hooks,reinterpret_cast<void*>(client+binding_values::movement_run_command),reinterpret_cast<void*>(&run_prediction));value->original_prediction=value->prediction->original<decltype(value->original_prediction)>();
     state=value.release();state->move->enable();state->prepare->enable();state->encode->enable();state->prediction->enable();status="Ready";legit_status="Ready";
     overlay_log("Input rewrite: pre-prediction movement plans, clone-owned wire replay enabled.");
-    overlay_log("Rage: reviewed bindings, bounded scans and fresh encode-time rays enabled; server hits remain unverified.");
 }
 }

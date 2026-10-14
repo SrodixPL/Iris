@@ -46,11 +46,14 @@ struct ShotConfirmation {
 };
 struct RecoilState {
     Vector previous{};
-    bool active{};
+    bool sampled{};
     Vector update(Vector view,Vector punch,bool firing,float strength) {
-        if(!firing||!nospread::finite(punch)||!nospread::finite(view)){previous={};active=false;return view;}
-        const auto delta=active?punch-previous:punch;
-        previous=punch;active=true;
+        if(!nospread::finite(punch)||!nospread::finite(view)){previous={};sampled=false;return view;}
+        const auto delta=sampled?punch-previous:punch;
+        // Track the natural settling between bursts without moving the view.
+        // Resuming fire then compensates only new recoil, not the remaining punch.
+        previous=punch;sampled=true;
+        if(!firing)return view;
         return clamp_angles(view-Vector{delta.x,delta.y,0}*strength);
     }
 };

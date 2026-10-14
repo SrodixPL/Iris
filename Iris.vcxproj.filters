@@ -561,12 +561,6 @@
     <ClInclude Include="src\core\module.hpp">
       <Filter>src\core</Filter>
     </ClInclude>
-    <ClCompile Include="src\core\render\chams_layer.cpp">
-      <Filter>src\core\render</Filter>
-    </ClCompile>
-    <ClInclude Include="src\core\render\chams_layer.hpp">
-      <Filter>src\core\render</Filter>
-    </ClInclude>
     <ClCompile Include="src\core\render\renderer.cpp">
       <Filter>src\core\render</Filter>
     </ClCompile>
