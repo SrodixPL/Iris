@@ -8,7 +8,7 @@ namespace iris::sdk::experimental {
 using Address = std::uintptr_t;
 inline constexpr std::uint64_t attack = 1;
 inline constexpr int maximum_steps = 64;
-// Reviewed against client SHA-256 44af2aa0...2a560008 (build 14190). These are raw messages,
+// Reviewed against client SHA-256 659940c1...49e36b0 (build 14191). These are raw messages,
 // including their native protobuf header, rather than Velocity's +0x10 views.
 struct Header { Address vtable{}, arena{}; };
 struct Repeated { Address arena{}; int size{}, capacity{}; Address rep{}; };
